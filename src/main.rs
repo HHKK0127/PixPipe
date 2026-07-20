@@ -12,8 +12,11 @@ use walkdir::WalkDir;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 use image::GenericImageView;
+use anyhow::{Context, Result};
+use log::{info, warn, error};
+use rayon::prelude::*;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, EnableMouseCapture, DisableMouseCapture},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     execute,
 };
@@ -45,7 +48,7 @@ const FULL_STEP_LABELS: &[&str] = &[
     "STEP 5: Convert to JXL",
 ];
 
-const THEME_NAMES: &[&str] = &["Cyan", "Green", "Magenta", "Yellow", "Blue", "Red"];
+const THEME_NAMES: &[&str] = &["Cyan", "Green", "Magenta", "Yellow", "Blue", "Red", "Solarized", "Dracula", "Nord", "Monokai", "Light", "Sepia"];
 
 // ============================================================
 // Config
@@ -75,6 +78,13 @@ struct Config {
     max_retries: usize,
     // Feature #2: Pause/Resume
     checkpoint_file: String,
+    // Resize options
+    resize_enabled: bool,
+    resize_max_width: u32,
+    resize_max_height: u32,
+    // Watermark
+    watermark_enabled: bool,
+    watermark_text: String,
 }
 
 impl Default for Config {
@@ -96,6 +106,11 @@ impl Default for Config {
             watch_interval_secs: 5,
             max_retries: 3,
             checkpoint_file: "checkpoint.json".into(),
+            resize_enabled: false,
+            resize_max_width: 1920,
+            resize_max_height: 1080,
+            watermark_enabled: false,
+            watermark_text: String::new(),
         }
     }
 }
@@ -115,9 +130,12 @@ impl Config {
         cfg
     }
 
-    fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let data = serde_json::to_string_pretty(self)?;
-        fs::write("config.json", data)?;
+    fn save(&self) -> Result<()> {
+        let data = serde_json::to_string_pretty(self)
+            .context("Failed to serialize config")?;
+        fs::write("config.json", data)
+            .context("Failed to write config.json")?;
+        info!("Config saved to config.json");
         Ok(())
     }
 }
@@ -661,42 +679,126 @@ struct Theme {
 
 impl Theme {
     fn from_index(idx: usize) -> Self {
-        match idx % 6 {
+        match idx % 12 {
+            // Cyan (default)
             0 => Theme {
                 primary: Color::Cyan, _secondary: Color::LightCyan, accent: Color::White,
                 success: Color::Green, error: Color::Red, warning: Color::Yellow,
                 muted: Color::DarkGray, bg_highlight: Color::Cyan,
                 bg: Color::Black, fg: Color::White,
             },
+            // Green
             1 => Theme {
                 primary: Color::Green, _secondary: Color::LightGreen, accent: Color::White,
                 success: Color::LightGreen, error: Color::Red, warning: Color::Yellow,
                 muted: Color::DarkGray, bg_highlight: Color::Green,
                 bg: Color::Black, fg: Color::White,
             },
+            // Magenta
             2 => Theme {
                 primary: Color::Magenta, _secondary: Color::LightMagenta, accent: Color::White,
                 success: Color::Green, error: Color::Red, warning: Color::Yellow,
                 muted: Color::DarkGray, bg_highlight: Color::Magenta,
                 bg: Color::Black, fg: Color::White,
             },
+            // Yellow
             3 => Theme {
                 primary: Color::Yellow, _secondary: Color::LightYellow, accent: Color::Black,
                 success: Color::Green, error: Color::Red, warning: Color::LightYellow,
                 muted: Color::DarkGray, bg_highlight: Color::Yellow,
                 bg: Color::Black, fg: Color::White,
             },
+            // Blue
             4 => Theme {
                 primary: Color::Blue, _secondary: Color::LightBlue, accent: Color::White,
                 success: Color::Green, error: Color::Red, warning: Color::Yellow,
                 muted: Color::DarkGray, bg_highlight: Color::Blue,
                 bg: Color::Black, fg: Color::White,
             },
-            _ => Theme {
+            // Red
+            5 => Theme {
                 primary: Color::Red, _secondary: Color::LightRed, accent: Color::White,
                 success: Color::Green, error: Color::LightRed, warning: Color::Yellow,
                 muted: Color::DarkGray, bg_highlight: Color::Red,
                 bg: Color::Black, fg: Color::White,
+            },
+            // Solarized (Dark)
+            6 => Theme {
+                primary: Color::Rgb(38, 139, 210),   // Solarized blue
+                _secondary: Color::Rgb(42, 161, 152), // Solarized cyan
+                accent: Color::Rgb(203, 75, 22),      // Solarized orange
+                success: Color::Rgb(133, 153, 0),     // Solarized green
+                error: Color::Rgb(220, 50, 47),       // Solarized red
+                warning: Color::Rgb(181, 137, 0),     // Solarized yellow
+                muted: Color::Rgb(88, 110, 117),      // Solarized base01
+                bg_highlight: Color::Rgb(7, 54, 66),  // Solarized base02
+                bg: Color::Rgb(0, 43, 54),            // Solarized base03
+                fg: Color::Rgb(238, 232, 213),        // Solarized base2
+            },
+            // Dracula
+            7 => Theme {
+                primary: Color::Rgb(189, 147, 249),   // Purple
+                _secondary: Color::Rgb(139, 233, 253), // Cyan
+                accent: Color::Rgb(255, 121, 198),     // Pink
+                success: Color::Rgb(80, 250, 123),     // Green
+                error: Color::Rgb(255, 85, 85),        // Red
+                warning: Color::Rgb(241, 250, 140),    // Yellow
+                muted: Color::Rgb(98, 114, 164),       // Comment
+                bg_highlight: Color::Rgb(68, 71, 90),  // Current line
+                bg: Color::Rgb(40, 42, 54),            // Background
+                fg: Color::Rgb(248, 248, 242),         // Foreground
+            },
+            // Nord
+            8 => Theme {
+                primary: Color::Rgb(136, 192, 208),   // Frost
+                _secondary: Color::Rgb(129, 161, 193), // Frost light
+                accent: Color::Rgb(180, 142, 173),     // Aurora purple
+                success: Color::Rgb(163, 190, 140),    // Aurora green
+                error: Color::Rgb(191, 97, 106),       // Aurora red
+                warning: Color::Rgb(235, 203, 139),    // Aurora yellow
+                muted: Color::Rgb(76, 86, 106),        // Nord3
+                bg_highlight: Color::Rgb(59, 66, 82),  // Nord2
+                bg: Color::Rgb(46, 52, 64),            // Nord1
+                fg: Color::Rgb(216, 222, 233),         // Nord5
+            },
+            // Monokai
+            9 => Theme {
+                primary: Color::Rgb(166, 226, 46),    // Green
+                _secondary: Color::Rgb(102, 217, 239), // Cyan
+                accent: Color::Rgb(249, 38, 114),      // Pink
+                success: Color::Rgb(166, 226, 46),     // Green
+                error: Color::Rgb(249, 38, 114),       // Pink
+                warning: Color::Rgb(230, 219, 116),    // Yellow
+                muted: Color::Rgb(117, 113, 94),       // Comment
+                bg_highlight: Color::Rgb(73, 72, 62),  // Selection
+                bg: Color::Rgb(39, 40, 34),            // Background
+                fg: Color::Rgb(248, 248, 242),         // Foreground
+            },
+            // Light
+            10 => Theme {
+                primary: Color::Rgb(0, 100, 200),      // Blue
+                _secondary: Color::Rgb(0, 150, 136),   // Teal
+                accent: Color::Rgb(200, 80, 0),        // Orange
+                success: Color::Rgb(46, 125, 50),      // Green
+                error: Color::Rgb(198, 40, 40),        // Red
+                warning: Color::Rgb(245, 124, 0),      // Amber
+                muted: Color::Rgb(158, 158, 158),      // Gray
+                bg_highlight: Color::Rgb(224, 224, 224),
+                bg: Color::Rgb(250, 250, 250),         // Near white
+                fg: Color::Rgb(33, 33, 33),            // Near black
+            },
+            // Sepia
+            _ => Theme {
+                primary: Color::Rgb(140, 100, 50),     // Brown
+                _secondary: Color::Rgb(180, 140, 80),  // Tan
+                accent: Color::Rgb(200, 120, 40),      // Amber
+                success: Color::Rgb(100, 140, 60),     // Olive green
+                error: Color::Rgb(180, 60, 40),        // Dark red
+                warning: Color::Rgb(200, 160, 40),     // Gold
+                muted: Color::Rgb(160, 140, 110),      // Warm gray
+                bg_highlight: Color::Rgb(230, 215, 190),
+                bg: Color::Rgb(250, 240, 225),         // Cream
+                fg: Color::Rgb(60, 40, 20),            // Dark brown
             },
         }
     }
@@ -803,6 +905,8 @@ enum MenuItem {
     NotificationCenter, // B3 #17
     ExportReport,    // B3 #19
     SimilarImages,   // Similar image search
+    FolderSync,      // Folder sync/backup
+    KeybindCustom,   // Keybind customization
 }
 
 impl MenuItem {
@@ -846,6 +950,8 @@ impl MenuItem {
             MenuItem::NotificationCenter,
             MenuItem::ExportReport,
             MenuItem::SimilarImages,
+            MenuItem::FolderSync,
+            MenuItem::KeybindCustom,
         ]
     }
 
@@ -889,49 +995,53 @@ impl MenuItem {
             MenuItem::NotificationCenter => "Notification Center",
             MenuItem::ExportReport => "Export Report",
             MenuItem::SimilarImages => "Similar Image Search",
+            MenuItem::FolderSync => "Folder Sync/Backup",
+            MenuItem::KeybindCustom => "Keybind Customization",
         }
     }
 
     fn description(&self) -> &str {
         match self {
-            MenuItem::FullProcess => "Run all steps in sequence. Select individual steps to enable/disable.",
-            MenuItem::RenameOnly => "Remove underscores and parentheses from filenames",
-            MenuItem::TimestampRename => "Rename files based on last modified timestamp",
-            MenuItem::ImageToJxl => "Convert images to lossless JXL format",
-            MenuItem::HashCacheDb => "Run hash_cache_db.exe for duplicate detection",
-            MenuItem::Settings => "Configure paths, extensions, and processing options",
-            MenuItem::BatchQueue => "Add multiple folders to process sequentially",
-            MenuItem::Profiles => "Save and load named configuration profiles",
-            MenuItem::WatchMode => "Monitor folders for new files and auto-process",
-            MenuItem::Statistics => "View processing history and statistics",
-            MenuItem::Duplicates => "View and manage duplicate file groups",
-            MenuItem::JxlSettings => "Configure JXL conversion quality (lossless/lossy)",
-            MenuItem::SizeCompare => "Compare file sizes before and after conversion",
-            MenuItem::ErrorPanel => "View detailed error information for failed files",
-            MenuItem::Presets => "Quick conversion presets (Web/Archive/Balance)",
-            MenuItem::Scheduler => "Schedule batch processing at specified times",
-            MenuItem::HistoryExport => "Export processing history to CSV/JSON",
-            MenuItem::ThemeEditor => "Customize color theme palette",
-            MenuItem::CompressionGraph => "View compression ratio by file format",
-            MenuItem::FileClassify => "Auto-classify files by type/date/size",
-            MenuItem::MetaEdit => "Batch edit EXIF metadata",
-            MenuItem::ConfigIO => "Import/export configuration files",
-            MenuItem::Plugins => "Manage custom conversion plugins",
+            MenuItem::FullProcess => "Run all steps in sequence | 全ステップを一括実行",
+            MenuItem::RenameOnly => "Remove underscores and parentheses | アンダースコア・括弧を除去",
+            MenuItem::TimestampRename => "Rename by last modified timestamp | 更新日時でリネーム",
+            MenuItem::ImageToJxl => "Convert images to lossless JXL | 画像をロスレスJXL変換",
+            MenuItem::HashCacheDb => "Run hash_cache_db for duplicates | 重複検出用ハッシュDB構築",
+            MenuItem::Settings => "Configure paths and options | パス・オプション設定",
+            MenuItem::BatchQueue => "Process multiple folders in order | 複数フォルダを順次処理",
+            MenuItem::Profiles => "Save/load configuration profiles | 設定プロファイルの保存/読込",
+            MenuItem::WatchMode => "Auto-process new files in folders | フォルダ監視で自動処理",
+            MenuItem::Statistics => "View processing history and stats | 処理履歴と統計を表示",
+            MenuItem::Duplicates => "View and manage duplicate files | 重複ファイルの確認・管理",
+            MenuItem::JxlSettings => "Configure JXL quality settings | JXL変換品質の設定",
+            MenuItem::SizeCompare => "Compare sizes before/after | 変換前後のサイズ比較",
+            MenuItem::ErrorPanel => "View error details for failures | 失敗ファイルのエラー詳細",
+            MenuItem::Presets => "Quick conversion presets | クイック変換プリセット",
+            MenuItem::Scheduler => "Schedule batch processing | バッチ処理のスケジュール",
+            MenuItem::HistoryExport => "Export history to CSV/JSON | 履歴をCSV/JSON出力",
+            MenuItem::ThemeEditor => "Customize color theme | カラーテーマのカスタマイズ",
+            MenuItem::CompressionGraph => "Compression ratio by format | フォーマット別圧縮率グラフ",
+            MenuItem::FileClassify => "Auto-classify files by type | ファイル自動分類",
+            MenuItem::MetaEdit => "Batch edit EXIF metadata | EXIFメタデータ一括編集",
+            MenuItem::ConfigIO => "Import/export config files | 設定ファイルの导入/出力",
+            MenuItem::Plugins => "Manage conversion plugins | 変換プラグイン管理",
             // Batch 3
-            MenuItem::ImagePreview => "Preview images as ASCII art in terminal",
-            MenuItem::FuzzyFinder => "Fuzzy search files by name",
-            MenuItem::SplitPane => "Split view for input/output comparison",
-            MenuItem::QuickActions => "Quick access to common actions",
-            MenuItem::RecentFiles => "View recently processed files",
-            MenuItem::TagSystem => "Tag and categorize files",
-            MenuItem::SideBySideDiff => "Compare before/after file sizes",
-            MenuItem::FileTreeView => "Browse directory tree structure",
-            MenuItem::RenamePattern => "Preview batch rename with regex patterns",
-            MenuItem::Timeline => "Visual timeline of processing history",
-            MenuItem::CommandPalette => "Search and execute any command",
-            MenuItem::NotificationCenter => "View notification history",
-            MenuItem::ExportReport => "Export processing report",
-            MenuItem::SimilarImages => "Find visually similar images using perceptual hashing",
+            MenuItem::ImagePreview => "Preview images as ASCII art | 画像をASCIIアートでプレビュー",
+            MenuItem::FuzzyFinder => "Fuzzy search files by name | ファジーファイル検索",
+            MenuItem::SplitPane => "Split view comparison | 分割ビューで比較",
+            MenuItem::QuickActions => "Quick access to actions | よく使うアクションにクイックアクセス",
+            MenuItem::RecentFiles => "View recently processed files | 最近処理したファイル",
+            MenuItem::TagSystem => "Tag and categorize files | ファイルにタグ付け・分類",
+            MenuItem::SideBySideDiff => "Compare before/after sizes | 変換前後のサイズを並列比較",
+            MenuItem::FileTreeView => "Browse directory tree | ディレクトリツリーを閲覧",
+            MenuItem::RenamePattern => "Preview regex rename | 正規表現リネームのプレビュー",
+            MenuItem::Timeline => "Visual processing timeline | 処理履歴のタイムライン表示",
+            MenuItem::CommandPalette => "Search and execute commands | コマンド検索・実行",
+            MenuItem::NotificationCenter => "View notification history | 通知履歴を表示",
+            MenuItem::ExportReport => "Export processing report | 処理レポートを出力",
+            MenuItem::SimilarImages => "Find similar images (perceptual hash) | 類似画像検出(知覚ハッシュ)",
+            MenuItem::FolderSync => "Sync folders and auto-backup | フォルダ同期・自動バックアップ",
+            MenuItem::KeybindCustom => "Customize keyboard shortcuts | キーバインドのカスタマイズ",
         }
     }
 }
@@ -942,6 +1052,7 @@ impl MenuItem {
 
 #[derive(Clone, PartialEq)]
 enum AppState {
+    Splash,             // Splash screen
     Menu,
     StepSelect,
     Preview,
@@ -972,6 +1083,7 @@ enum AppState {
     ConfigIO,          // New #19: Config import/export
     Plugins,           // New #20: Plugin system
     StatusbarCustom,   // New #15: Statusbar customization
+    RenamePreview,     // Rename before/after preview
     // Batch 3
     ImagePreview,      // B3 #1: Image preview
     SplitPane,         // B3 #6: Split pane view
@@ -986,6 +1098,8 @@ enum AppState {
     NotificationCenter,// B3 #17: Notification center
     ExportReport,      // B3 #19: Export report
     SimilarImages,     // Similar image search
+    FolderSync,        // Folder sync/backup
+    KeybindCustom,     // Keybind customization
 }
 
 struct App {
@@ -997,6 +1111,9 @@ struct App {
     undo_log: UndoLog,
     theme_idx: usize,
     dry_run: bool,
+    // Splash
+    splash_start: Instant,
+    splash_duration: Duration,
     // Step selection
     step_enabled: Vec<bool>,
     step_selected: usize,
@@ -1031,6 +1148,7 @@ struct App {
     frame_count: u64,
     // Feature #2: Pause/Resume
     is_paused: Arc<Mutex<bool>>,
+    is_interrupted: Arc<Mutex<bool>>,  // Esc to interrupt processing
     checkpoint: Arc<Mutex<Option<Checkpoint>>>,
     // Feature #3: Duplicate groups
     duplicate_groups: Vec<DuplicateGroup>,
@@ -1171,6 +1289,18 @@ struct App {
     rename_selected: usize,
     rename_input: String,
     rename_field: usize, // 0=pattern, 1=replacement
+    // Rename preview
+    rename_preview_items: Vec<(String, String)>, // (old, new)
+    rename_preview_scroll: usize,
+    // Folder sync
+    folder_sync_source: String,
+    folder_sync_dest: String,
+    folder_sync_watching: bool,
+    folder_sync_log: Vec<String>,
+    // Keybind customization
+    keybind_selected: usize,
+    keybind_editing: bool,
+    keybind_input: String,
     // B3 #14: Timeline
     timeline_entries: Vec<TimelineEntry>,
     timeline_scroll: usize,
@@ -1212,7 +1342,7 @@ impl App {
         let state_store = AppStateStore::load();
         let sys_info = System::new_all();
         Self {
-            state: AppState::Menu,
+            state: AppState::Splash,
             menu_items: MenuItem::all().to_vec(),
             selected: state_store.last_menu_idx,
             config: config.clone(),
@@ -1220,6 +1350,8 @@ impl App {
             undo_log,
             theme_idx: state_store.last_theme_idx,
             dry_run: state_store.last_dry_run,
+            splash_start: Instant::now(),
+            splash_duration: Duration::from_secs(2),
             step_enabled: vec![true; FULL_STEP_LABELS.len()],
             step_selected: 0,
             preview_items: Vec::new(),
@@ -1246,6 +1378,7 @@ impl App {
             spinner_idx: 0,
             frame_count: 0,
             is_paused: Arc::new(Mutex::new(false)),
+            is_interrupted: Arc::new(Mutex::new(false)),
             checkpoint: Arc::new(Mutex::new(None)),
             duplicate_groups: Vec::new(),
             dup_group_selected: 0,
@@ -1362,6 +1495,17 @@ impl App {
             rename_selected: 0,
             rename_input: String::new(),
             rename_field: 0,
+            rename_preview_items: Vec::new(),
+            rename_preview_scroll: 0,
+            // Folder sync
+            folder_sync_source: String::new(),
+            folder_sync_dest: String::new(),
+            folder_sync_watching: false,
+            folder_sync_log: Vec::new(),
+            // Keybind customization
+            keybind_selected: 0,
+            keybind_editing: false,
+            keybind_input: String::new(),
             timeline_entries: Vec::new(),
             timeline_scroll: 0,
             wizard_step: 0,
@@ -1505,8 +1649,14 @@ impl App {
         let step_progress = self.step_progress.clone();
         let files_processed = self.files_processed.clone();
         let step_enabled = self.step_enabled.clone();
+        let is_paused = self.is_paused.clone();
+        let is_interrupted = self.is_interrupted.clone();
+        let undo_log = Arc::new(Mutex::new(self.undo_log.clone()));
         let config = self.config.clone();
         let dry_run = self.dry_run;
+
+        // Reset interrupt flag
+        *self.is_interrupted.lock().unwrap() = false;
 
         thread::spawn(move || {
             let log = |msg: String| { if let Ok(mut l) = logs.lock() { l.push(msg); } };
@@ -1520,11 +1670,17 @@ impl App {
             let inc_files = |n: usize| {
                 if let Ok(mut f) = files_processed.lock() { *f += n; }
             };
+            let add_undo = |old: String, new: String| {
+                if let Ok(mut log) = undo_log.lock() {
+                    log.entries.push(UndoEntry { old_path: old, new_path: new });
+                    let _ = log.save();
+                }
+            };
 
             run_full_process(
-                &config, &step_enabled, dry_run,
+                &config, &step_enabled, dry_run, &is_interrupted,
                 &log, &set_prog, &set_detail, &set_step, &add_error,
-                &set_step_prog, &inc_files,
+                &set_step_prog, &inc_files, &add_undo,
             );
 
             *is_processing.lock().unwrap() = false;
@@ -1613,6 +1769,22 @@ impl App {
                 MenuItem::MetaEdit => {}
                 MenuItem::ConfigIO => {}
                 MenuItem::Plugins => {}
+                MenuItem::ImagePreview => {}
+                MenuItem::FuzzyFinder => {}
+                MenuItem::SplitPane => {}
+                MenuItem::QuickActions => {}
+                MenuItem::RecentFiles => {}
+                MenuItem::TagSystem => {}
+                MenuItem::SideBySideDiff => {}
+                MenuItem::FileTreeView => {}
+                MenuItem::RenamePattern => {}
+                MenuItem::Timeline => {}
+                MenuItem::CommandPalette => {}
+                MenuItem::NotificationCenter => {}
+                MenuItem::ExportReport => {}
+                MenuItem::SimilarImages => {}
+                MenuItem::FolderSync => {}
+                MenuItem::KeybindCustom => {}
             }
             *is_processing.lock().unwrap() = false;
         });
@@ -1795,9 +1967,16 @@ impl App {
             }
             info.push(("Extension".into(), p.extension().unwrap_or_default().to_string_lossy().to_string()));
             info.push(("Path".into(), p.to_string_lossy().to_string()));
+
+                // EXIF metadata
+                if let Some(exif_data) = parse_exif(&p) {
+                    for (key, value) in exif_data {
+                        info.push((key, value));
+                    }
+                }
+            }
+            info
         }
-        info
-    }
 
     // Feature #12: Export log
     fn export_log(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -2177,6 +2356,7 @@ impl App {
         if self.rename_patterns.is_empty() { return; }
         let pat = &mut self.rename_patterns[self.rename_selected];
         pat.preview.clear();
+        self.rename_preview_items.clear();
         for item in &self.preview_items {
             let old_name = &item.0;
             let new_name = if pat.use_regex {
@@ -2189,9 +2369,12 @@ impl App {
                 old_name.replace(&pat.pattern, &pat.replacement)
             };
             if old_name != &new_name {
-                pat.preview.push((old_name.clone(), new_name));
+                pat.preview.push((old_name.clone(), new_name.clone()));
+                self.rename_preview_items.push((old_name.clone(), new_name));
             }
         }
+        self.rename_preview_scroll = 0;
+        self.state = AppState::RenamePreview;
     }
 
     // B3 #14: Build timeline
@@ -2231,6 +2414,25 @@ impl App {
         });
         if self.notifications.len() > 200 {
             self.notifications.truncate(200);
+        }
+    }
+
+    fn update_palette_results(&mut self) {
+        self.palette_results.clear();
+        if self.palette_query.is_empty() {
+            return;
+        }
+        let query = self.palette_query.to_lowercase();
+        let all_items = MenuItem::all();
+        for (i, item) in all_items.iter().enumerate() {
+            let label = item.label().to_lowercase();
+            let desc = item.description().to_lowercase();
+            if label.contains(&query) || desc.contains(&query) {
+                self.palette_results.push((format!("{} - {}", item.label(), item.description()), i));
+            }
+        }
+        if self.palette_selected >= self.palette_results.len() {
+            self.palette_selected = self.palette_results.len().saturating_sub(1);
         }
     }
 
@@ -2416,6 +2618,7 @@ fn run_full_process(
     config: &Config,
     step_enabled: &[bool],
     dry_run: bool,
+    is_interrupted: &Arc<Mutex<bool>>,
     log: &dyn Fn(String),
     set_prog: &dyn Fn(f64),
     set_detail: &dyn Fn(String),
@@ -2423,6 +2626,7 @@ fn run_full_process(
     add_error: &dyn Fn(String),
     set_step_prog: &dyn Fn(usize, f64),
     inc_files: &dyn Fn(usize),
+    add_undo: &dyn Fn(String, String),
 ) {
     if dry_run {
         log("=== DRY RUN MODE — No files will be modified ===".into());
@@ -2435,10 +2639,15 @@ fn run_full_process(
     let mut total_processed = 0usize;
     let mut total_removed = 0usize;
 
+    // Check for interruption
+    let check_interrupt = || -> bool {
+        if let Ok(val) = is_interrupted.lock() { *val } else { false }
+    };
+
     // STEP 1: Move files
     if step_enabled[0] {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
         step_num += 1;
-        set_step(format!("STEP {}/{}: Moving files...", step_num, total_steps));
         set_prog(0.0);
         set_step_prog(0, 0.0);
         set_detail("Scanning sources...".into());
@@ -2467,6 +2676,7 @@ fn run_full_process(
                 if !dry_run {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
+                        add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
                         sources_moved += 1;
                     }
                 } else {
@@ -2504,6 +2714,7 @@ fn run_full_process(
                             if !dry_run {
                                 let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                                 if fs::rename(entry.path(), &dest_path).is_ok() {
+                                    add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
                                     dl_moved += 1;
                                 }
                             } else {
@@ -2528,6 +2739,7 @@ fn run_full_process(
                 if !dry_run {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
+                        add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
                         x_moved += 1;
                     }
                 } else {
@@ -2547,6 +2759,7 @@ fn run_full_process(
 
     // STEP 2: Remove duplicates
     if step_enabled[1] {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
         step_num += 1;
         set_step(format!("STEP {}/{}: Removing duplicates...", step_num, total_steps));
         set_prog(0.2);
@@ -2559,18 +2772,28 @@ fn run_full_process(
             .unwrap_or_default();
         let total = files.len();
 
+        // Parallel hash computation using rayon
+        set_detail(format!("Computing hashes for {} files (parallel)...", total));
+        let hashes: Vec<(PathBuf, Option<String>)> = files.par_iter()
+            .map(|entry| {
+                let path = entry.path();
+                let hash = calculate_sha256(&path).ok();
+                (path, hash)
+            })
+            .collect();
+
         let mut seen_hashes = HashSet::new();
         let mut removed = 0;
 
-        for (i, entry) in files.iter().enumerate() {
-            let path = entry.path();
-            set_detail(format!("{}/{} files scanned", i + 1, total));
+        for (i, (path, hash_opt)) in hashes.iter().enumerate() {
+            let fname = path.file_name().unwrap_or_default().to_string_lossy();
+            set_detail(format!("{}/{} - {}", i + 1, total, fname));
             set_step_prog(1, (i + 1) as f64 / total as f64);
-            match calculate_sha256(&path) {
-                Ok(hash) => {
-                    if !seen_hashes.insert(hash) {
+            match hash_opt {
+                Some(hash) => {
+                    if !seen_hashes.insert(hash.clone()) {
                         if !dry_run {
-                            if let Err(e) = fs::remove_file(&path) {
+                            if let Err(e) = fs::remove_file(path) {
                                 add_error(format!("Step 2 remove {}: {}", path.display(), e));
                             } else {
                                 removed += 1;
@@ -2580,7 +2803,7 @@ fn run_full_process(
                         }
                     }
                 }
-                Err(e) => { add_error(format!("Step 2 hash {}: {}", path.display(), e)); }
+                None => { add_error(format!("Step 2 hash failed: {}", path.display())); }
             }
         }
         total_removed += removed;
@@ -2590,6 +2813,7 @@ fn run_full_process(
 
     // STEP 3: Remove files in REF
     if step_enabled[2] {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
         step_num += 1;
         set_step(format!("STEP {}/{}: Removing reference duplicates...", step_num, total_steps));
         set_prog(0.4);
@@ -2597,9 +2821,7 @@ fn run_full_process(
         log("[STEP 3] Removing files that exist in reference...".into());
 
         let ref_path = PathBuf::from(&config.reference);
-        let mut ref_hashes = HashSet::new();
-
-        if ref_path.exists() {
+        let ref_hashes: HashSet<String> = if ref_path.exists() {
             let ref_files: Vec<_> = WalkDir::new(&ref_path)
                 .into_iter()
                 .filter_map(|e| e.ok())
@@ -2607,14 +2829,16 @@ fn run_full_process(
                 .collect();
             let ref_total = ref_files.len();
 
-            for (i, entry) in ref_files.iter().enumerate() {
-                set_detail(format!("Building ref DB: {}/{}", i + 1, ref_total));
-                set_step_prog(2, (i + 1) as f64 / ref_total as f64 * 0.5);
-                if let Ok(hash) = calculate_sha256(&entry.path().to_path_buf()) {
-                    ref_hashes.insert(hash);
-                }
-            }
-        }
+            // Parallel hash computation for reference files
+            set_detail(format!("Building ref DB: {} files (parallel)...", ref_total));
+            let ref_hashes_vec: Vec<String> = ref_files.par_iter()
+                .filter_map(|entry| calculate_sha256(&entry.path().to_path_buf()).ok())
+                .collect();
+            set_step_prog(2, 0.5);
+            ref_hashes_vec.into_iter().collect()
+        } else {
+            HashSet::new()
+        };
 
         let dest_files: Vec<_> = fs::read_dir(&config.dest)
             .ok()
@@ -2625,7 +2849,8 @@ fn run_full_process(
 
         for (i, entry) in dest_files.iter().enumerate() {
             let path = entry.path();
-            set_detail(format!("Checking: {}/{}", i + 1, dest_total));
+            let fname = path.file_name().unwrap_or_default().to_string_lossy();
+            set_detail(format!("{}/{} - {}", i + 1, dest_total, fname));
             set_step_prog(2, 0.5 + (i + 1) as f64 / dest_total as f64 * 0.5);
             if let Ok(hash) = calculate_sha256(&path) {
                 if ref_hashes.contains(&hash) {
@@ -2648,6 +2873,7 @@ fn run_full_process(
 
     // STEP 4: Rename + clean
     if step_enabled[3] {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
         step_num += 1;
         set_step(format!("STEP {}/{}: Renaming files...", step_num, total_steps));
         set_prog(0.6);
@@ -2687,6 +2913,7 @@ fn run_full_process(
                         let new_path = path.parent().unwrap().join(&final_name);
                         if !dry_run {
                             if fs::rename(&path, &new_path).is_ok() {
+                                add_undo(path.to_string_lossy().to_string(), new_path.to_string_lossy().to_string());
                                 renamed += 1;
                             }
                         } else {
@@ -2708,8 +2935,35 @@ fn run_full_process(
         log(format!("  ✓ Cleaned {} filenames {}", clean_count, if dry_run { "(dry run)" } else { "" }));
     }
 
+    // STEP 4.5: Resize images (if enabled)
+    if config.resize_enabled {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        set_detail("Resizing images...".into());
+        log("[RESIZE] Resizing images...".into());
+        if !dry_run {
+            let resized = resize_images(&config.dest, config.resize_max_width, config.resize_max_height, &log);
+            log(format!("  ✓ Resized {} images", resized));
+        } else {
+            log("  ✓ Resize skipped (dry run)".into());
+        }
+    }
+
+    // STEP 4.6: Watermark (if enabled)
+    if config.watermark_enabled && !config.watermark_text.is_empty() {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        set_detail("Adding watermark...".into());
+        log("[WATERMARK] Adding watermark overlay...".into());
+        if !dry_run {
+            let marked = add_watermark(&config.dest, &config.watermark_text, &log);
+            log(format!("  ✓ Watermarked {} images", marked));
+        } else {
+            log("  ✓ Watermark skipped (dry run)".into());
+        }
+    }
+
     // STEP 5: Convert to JXL
     if step_enabled[4] {
+        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
         step_num += 1;
         set_step(format!("STEP {}/{}: Converting to JXL...", step_num, total_steps));
         set_prog(0.8);
@@ -2869,9 +3123,18 @@ fn show_cli_menu() {
     let set_step_prog = |_: usize, _: f64| {};
     let inc_files = |_: usize| {};
     let step_enabled = vec![true; 5];
+    let is_interrupted = Arc::new(Mutex::new(false));
 
     match choice {
-        1 => run_full_process(&config, &step_enabled, false, &log, &set_prog, &set_detail, &set_step, &add_error, &set_step_prog, &inc_files),
+        1 => {
+            let undo_log = Arc::new(Mutex::new(UndoLog::default()));
+            let add_undo = |old: String, new: String| {
+                if let Ok(mut log) = undo_log.lock() {
+                    log.entries.push(UndoEntry { old_path: old, new_path: new });
+                }
+            };
+            run_full_process(&config, &step_enabled, false, &is_interrupted, &log, &set_prog, &set_detail, &set_step, &add_error, &set_step_prog, &inc_files, &add_undo);
+        }
         2 => { let _ = rename_remove_underscore_parens(&config.dest); }
         3 => { let _ = rename_by_timestamp(&config.dest); }
         4 => { let _ = convert_to_jxl(&config.dest); }
@@ -2884,7 +3147,21 @@ fn show_cli_menu() {
 // Main
 // ============================================================
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
+    // Initialize logging with file output
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("pixpipe.log")
+        .context("Failed to open pixpipe.log")?;
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_secs()
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .init();
+
+    info!("pixpipe v{} starting", env!("CARGO_PKG_VERSION"));
+
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 1 && args[1] == "menu" {
@@ -2892,23 +3169,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    enable_raw_mode()?;
+    enable_raw_mode().context("Failed to enable raw mode")?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .context("Failed to enter alternate screen")?;
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(backend).context("Failed to create terminal")?;
 
     let mut app = App::new();
     let result = run_app(&mut terminal, &mut app);
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    disable_raw_mode().ok();
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).ok();
+    terminal.show_cursor().ok();
 
     if let Err(err) = result {
+        error!("Application error: {}", err);
         eprintln!("Error: {}", err);
     }
 
+    info!("pixpipe exiting");
     Ok(())
 }
 
@@ -2928,6 +3208,11 @@ fn run_app(
             app.spinner_idx = (app.spinner_idx + 1) % SPINNER_CHARS.len();
         }
 
+        // Auto-transition from Splash to Menu after duration
+        if app.state == AppState::Splash && app.splash_start.elapsed() >= app.splash_duration {
+            app.state = AppState::Menu;
+        }
+
         // Feature #16: Refresh memory every 60 frames
         if app.frame_count % 60 == 0 {
             app.refresh_memory();
@@ -2939,268 +3224,166 @@ fn run_app(
         }
 
         if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-
-                // Feature #13: Confirm dialog takes priority
-                if app.state == AppState::ConfirmDialog {
-                    match key.code {
-                        KeyCode::Char('y') | KeyCode::Enter => {
-                            let action = app.confirm_action.clone();
-                            app.state = AppState::Menu;
-                            app.confirm_action = None;
-                            match action {
-                                Some(ConfirmAction::StartProcessing) => {
-                                    app.scan_preview();
-                                    app.preview_scroll = 0;
-                                    app.state = AppState::Preview;
-                                }
-                                Some(ConfirmAction::ClearHistory) => {
-                                    app.history = History::default();
-                                    let _ = app.history.save();
-                                }
-                                Some(ConfirmAction::ClearUndo) => {
-                                    app.undo_log = UndoLog::default();
-                                    let _ = app.undo_log.save();
-                                }
-                                None => {}
-                            }
-                        }
-                        KeyCode::Char('n') | KeyCode::Esc => {
-                            app.state = AppState::Menu;
-                            app.confirm_action = None;
-                        }
-                        KeyCode::Up | KeyCode::Down => {
-                            app.confirm_yes = !app.confirm_yes;
-                        }
-                        _ => {}
+            let evt = event::read()?;
+            match evt {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
                     }
-                    continue;
-                }
-
-                // Feature #14: Help screen
-                if app.state == AppState::Help {
-                    match key.code {
-                        KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => app.help_scroll = app.help_scroll.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.help_scroll < 30 { app.help_scroll += 1; }
+                    // Feature #13: Confirm dialog takes priority
+                    if app.state == AppState::ConfirmDialog {
+                        match key.code {
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                let action = app.confirm_action.clone();
+                                app.state = AppState::Menu;
+                                app.confirm_action = None;
+                                match action {
+                                    Some(ConfirmAction::StartProcessing) => {
+                                        app.scan_preview();
+                                        app.preview_scroll = 0;
+                                        app.state = AppState::Preview;
+                                    }
+                                    Some(ConfirmAction::ClearHistory) => {
+                                        app.history = History::default();
+                                        let _ = app.history.save();
+                                    }
+                                    Some(ConfirmAction::ClearUndo) => {
+                                        app.undo_log = UndoLog::default();
+                                        let _ = app.undo_log.save();
+                                    }
+                                    None => {}
+                                }
+                            }
+                            KeyCode::Char('n') | KeyCode::Esc => {
+                                app.state = AppState::Menu;
+                                app.confirm_action = None;
+                            }
+                            KeyCode::Up | KeyCode::Down => {
+                                app.confirm_yes = !app.confirm_yes;
+                            }
+                            _ => {}
                         }
-                        KeyCode::PageUp => app.help_scroll = app.help_scroll.saturating_sub(10),
-                        KeyCode::PageDown => app.help_scroll = (app.help_scroll + 10).min(30),
-                        _ => {}
+                        continue;
                     }
-                    continue;
-                }
 
-                // Global keys
-                if !app.search_mode {
-                    match key.code {
-                        KeyCode::Char('t') => {
-                            app.theme_idx = (app.theme_idx + 1) % THEME_NAMES.len();
-                            continue;
-                        }
-                        KeyCode::Char('d') => {
-                            app.dry_run = !app.dry_run;
-                            continue;
-                        }
-                        KeyCode::Char('u') => {
-                            if app.state == AppState::Done || app.state == AppState::Menu {
-                                app.undo_last();
+                    // Feature #14: Help screen
+                    if app.state == AppState::Help {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => app.help_scroll = app.help_scroll.saturating_sub(1),
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.help_scroll < 30 { app.help_scroll += 1; }
                             }
-                            continue;
+                            KeyCode::PageUp => app.help_scroll = app.help_scroll.saturating_sub(10),
+                            KeyCode::PageDown => app.help_scroll = (app.help_scroll + 10).min(30),
+                            _ => {}
                         }
-                        KeyCode::Char('?') => {
-                            app.help_scroll = 0;
-                            app.state = AppState::Help;
-                            continue;
-                        }
-                        KeyCode::Char('f') if app.state == AppState::Menu => {
-                            app.filter_selected = 0;
-                            app.state = AppState::FilterSort;
-                            continue;
-                        }
-                        KeyCode::Char('s') if app.state == AppState::Menu => {
-                            // Cycle sort field
-                            app.sort_config = match app.sort_config.field {
-                                SortField::Name => SortConfig { field: SortField::Size, ascending: true },
-                                SortField::Size => SortConfig { field: SortField::Date, ascending: true },
-                                SortField::Date => SortConfig { field: SortField::Type, ascending: true },
-                                SortField::Type => SortConfig { field: SortField::Name, ascending: true },
-                            };
-                            if let Ok(mut logs) = app.logs.lock() {
-                                logs.push(format!("Sort: {:?} ({})", app.sort_config.field, if app.sort_config.ascending { "asc" } else { "desc" }));
+                        continue;
+                    }
+
+                    // Global keys
+                    if !app.search_mode {
+                        match key.code {
+                            KeyCode::Char('t') => {
+                                app.theme_idx = (app.theme_idx + 1) % THEME_NAMES.len();
+                                continue;
                             }
-                            continue;
-                        }
-                        KeyCode::Char('S') if app.state == AppState::Menu => {
-                            app.stats_scroll = 0;
-                            app.state = AppState::Stats;
-                            continue;
-                        }
-                        KeyCode::Char('w') if app.state == AppState::Menu => {
-                            app.state = AppState::WatchMode;
-                            continue;
-                        }
-                        KeyCode::Char('p') if app.state == AppState::Menu => {
-                            app.profile_selected = 0;
-                            app.state = AppState::Profiles;
-                            continue;
-                        }
-                        KeyCode::Char('b') if app.state == AppState::Menu => {
-                            app.batch_selected = 0;
-                            app.state = AppState::BatchQueue;
-                            continue;
-                        }
-                        KeyCode::Char('i') if app.state == AppState::Preview => {
-                            app.info_selected = 0;
-                            app.state = AppState::InfoPanel;
-                            continue;
-                        }
-                        KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            let mut paused = app.is_paused.lock().unwrap();
-                            *paused = !*paused;
-                            continue;
-                        }
-                        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Err(e) = app.export_log() {
+                            KeyCode::Char('d') => {
+                                app.dry_run = !app.dry_run;
+                                continue;
+                            }
+                            KeyCode::Char('u') => {
+                                if app.state == AppState::Done || app.state == AppState::Menu {
+                                    app.undo_last();
+                                }
+                                continue;
+                            }
+                            KeyCode::Char('?') => {
+                                app.help_scroll = 0;
+                                app.state = AppState::Help;
+                                continue;
+                            }
+                            KeyCode::Char('f') if app.state == AppState::Menu => {
+                                app.filter_selected = 0;
+                                app.state = AppState::FilterSort;
+                                continue;
+                            }
+                            KeyCode::Char('s') if app.state == AppState::Menu => {
+                                // Cycle sort field
+                                app.sort_config = match app.sort_config.field {
+                                    SortField::Name => SortConfig { field: SortField::Size, ascending: true },
+                                    SortField::Size => SortConfig { field: SortField::Date, ascending: true },
+                                    SortField::Date => SortConfig { field: SortField::Type, ascending: true },
+                                    SortField::Type => SortConfig { field: SortField::Name, ascending: true },
+                                };
                                 if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Export failed: {}", e));
+                                    logs.push(format!("Sort: {:?} ({})", app.sort_config.field, if app.sort_config.ascending { "asc" } else { "desc" }));
                                 }
-                            } else {
-                                if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push("Log exported successfully".into());
-                                }
+                                continue;
                             }
-                            continue;
+                            KeyCode::Char('S') if app.state == AppState::Menu => {
+                                app.stats_scroll = 0;
+                                app.state = AppState::Stats;
+                                continue;
+                            }
+                            KeyCode::Char('w') if app.state == AppState::Menu => {
+                                app.state = AppState::WatchMode;
+                                continue;
+                            }
+                            KeyCode::Char('p') if app.state == AppState::Menu => {
+                                app.profile_selected = 0;
+                                app.state = AppState::Profiles;
+                                continue;
+                            }
+                            KeyCode::Char('b') if app.state == AppState::Menu => {
+                                app.batch_selected = 0;
+                                app.state = AppState::BatchQueue;
+                                continue;
+                            }
+                            KeyCode::Char('i') if app.state == AppState::Preview => {
+                                app.info_selected = 0;
+                                app.state = AppState::InfoPanel;
+                                continue;
+                            }
+                            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                let mut paused = app.is_paused.lock().unwrap();
+                                *paused = !*paused;
+                                continue;
+                            }
+                            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Err(e) = app.export_log() {
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Export failed: {}", e));
+                                    }
+                                } else {
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push("Log exported successfully".into());
+                                    }
+                                }
+                                continue;
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
 
-                match app.state {
-                    AppState::Menu => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.save_state();
-                            return Ok(());
+                    match app.state {
+                        AppState::Splash => {
+                            // Any key or timeout transitions to Menu
+                            app.state = AppState::Menu;
                         }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.selected > 0 { app.selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.selected < app.menu_items.len() - 1 { app.selected += 1; }
-                        }
-                        KeyCode::Enter | KeyCode::Char(' ') => {
-                            let item = app.menu_items[app.selected];
-                            match item {
-                                MenuItem::FullProcess => app.state = AppState::StepSelect,
-                                MenuItem::Settings => app.state = AppState::Settings,
-                                MenuItem::BatchQueue => { app.batch_selected = 0; app.state = AppState::BatchQueue; }
-                                MenuItem::Profiles => { app.profile_selected = 0; app.state = AppState::Profiles; }
-                                MenuItem::WatchMode => app.state = AppState::WatchMode,
-                                MenuItem::Statistics => { app.stats_scroll = 0; app.state = AppState::Stats; }
-                                MenuItem::Duplicates => {
-                                    app.scan_duplicates();
-                                    app.dup_group_selected = 0;
-                                    app.state = AppState::DuplicateGroups;
-                                }
-                                MenuItem::JxlSettings => app.state = AppState::JxlSettings,
-                                MenuItem::SizeCompare => {
-                                    app.build_size_comparisons();
-                                    app.state = AppState::SizeCompare;
-                                }
-                                MenuItem::ErrorPanel => {
-                                    app.collect_error_details();
-                                    app.state = AppState::ErrorPanel;
-                                }
-                                MenuItem::Presets => app.state = AppState::Presets,
-                                MenuItem::Scheduler => app.state = AppState::Scheduler,
-                                MenuItem::HistoryExport => app.state = AppState::HistoryExport,
-                                MenuItem::ThemeEditor => {
-                                    app.load_custom_themes();
-                                    app.state = AppState::ThemeEditor;
-                                }
-                                MenuItem::CompressionGraph => {
-                                    app.build_compression_stats();
-                                    app.state = AppState::CompressionGraph;
-                                }
-                                MenuItem::FileClassify => app.state = AppState::FileClassify,
-                                MenuItem::MetaEdit => {
-                                    app.load_meta_files();
-                                    app.state = AppState::MetaEdit;
-                                }
-                                MenuItem::ConfigIO => app.state = AppState::ConfigIO,
-                                MenuItem::Plugins => {
-                                    app.scan_plugins();
-                                    app.state = AppState::Plugins;
-                                }
-                                // Batch 3 dispatch
-                                MenuItem::ImagePreview => {
-                                    app.generate_image_preview(&app.config.dest);
-                                    app.state = AppState::ImagePreview;
-                                }
-                                MenuItem::FuzzyFinder => {
-                                    app.fuzzy_mode = true;
-                                    app.fuzzy_query.clear();
-                                    app.fuzzy_results.clear();
-                                }
-                                MenuItem::SplitPane => {
-                                    app.split_mode = true;
-                                    app.state = AppState::SplitPane;
-                                }
-                                MenuItem::QuickActions => {
-                                    app.quick_selected = 0;
-                                    app.state = AppState::QuickActions;
-                                }
-                                MenuItem::RecentFiles => {
-                                    app.recent_scroll = 0;
-                                    app.state = AppState::RecentFiles;
-                                }
-                                MenuItem::TagSystem => {
-                                    app.tag_selected = 0;
-                                    app.state = AppState::TagSystem;
-                                }
-                                MenuItem::SideBySideDiff => {
-                                    app.build_size_comparisons();
-                                    app.diff_scroll = 0;
-                                    app.state = AppState::SideBySideDiff;
-                                }
-                                MenuItem::FileTreeView => {
-                                    app.build_file_tree();
-                                    app.tree_selected = 0;
-                                    app.state = AppState::FileTreeView;
-                                }
-                                MenuItem::RenamePattern => {
-                                    app.rename_selected = 0;
-                                    app.state = AppState::RenamePattern;
-                                }
-                                MenuItem::Timeline => {
-                                    app.build_timeline();
-                                    app.timeline_scroll = 0;
-                                    app.state = AppState::Timeline;
-                                }
-                                MenuItem::CommandPalette => {
-                                    app.palette_open = true;
-                                    app.palette_query.clear();
-                                    app.palette_results.clear();
-                                }
-                                MenuItem::NotificationCenter => {
-                                    app.notif_scroll = 0;
-                                    app.state = AppState::NotificationCenter;
-                                }
-                                MenuItem::ExportReport => {
-                                    app.report_format = 0;
-                                    app.state = AppState::ExportReport;
-                                }
-                                _ => app.start_single(item),
+                        AppState::Menu => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.save_state();
+                                return Ok(());
                             }
-                        }
-                        KeyCode::Char(c) if c.is_ascii_digit() => {
-                            let idx = c.to_digit(10).unwrap() as usize;
-                            if idx >= 1 && idx <= app.menu_items.len() {
-                                let item = app.menu_items[idx - 1];
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.selected > 0 { app.selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.selected < app.menu_items.len() - 1 { app.selected += 1; }
+                            }
+                            KeyCode::Enter | KeyCode::Char(' ') => {
+                                let item = app.menu_items[app.selected];
                                 match item {
                                     MenuItem::FullProcess => app.state = AppState::StepSelect,
                                     MenuItem::Settings => app.state = AppState::Settings,
@@ -3243,14 +3426,16 @@ fn run_app(
                                         app.scan_plugins();
                                         app.state = AppState::Plugins;
                                     }
-                                    // Batch 3 dispatch (number keys)
+                                    // Batch 3 dispatch
                                     MenuItem::ImagePreview => {
-                                        app.generate_image_preview(&app.config.dest);
+                                        {let dest = app.config.dest.clone(); app.generate_image_preview(&dest);}
                                         app.state = AppState::ImagePreview;
                                     }
                                     MenuItem::FuzzyFinder => {
                                         app.fuzzy_mode = true;
                                         app.fuzzy_query.clear();
+                                        app.fuzzy_results.clear();
+                                        app.fuzzy_selected = 0;
                                     }
                                     MenuItem::SplitPane => {
                                         app.split_mode = true;
@@ -3270,10 +3455,12 @@ fn run_app(
                                     }
                                     MenuItem::SideBySideDiff => {
                                         app.build_size_comparisons();
+                                        app.diff_scroll = 0;
                                         app.state = AppState::SideBySideDiff;
                                     }
                                     MenuItem::FileTreeView => {
                                         app.build_file_tree();
+                                        app.tree_selected = 0;
                                         app.state = AppState::FileTreeView;
                                     }
                                     MenuItem::RenamePattern => {
@@ -3282,1117 +3469,1403 @@ fn run_app(
                                     }
                                     MenuItem::Timeline => {
                                         app.build_timeline();
+                                        app.timeline_scroll = 0;
                                         app.state = AppState::Timeline;
                                     }
                                     MenuItem::CommandPalette => {
                                         app.palette_open = true;
                                         app.palette_query.clear();
+                                        app.palette_results.clear();
+                                        app.state = AppState::CommandPalette;
                                     }
                                     MenuItem::NotificationCenter => {
+                                        app.notif_scroll = 0;
                                         app.state = AppState::NotificationCenter;
                                     }
                                     MenuItem::ExportReport => {
+                                        app.report_format = 0;
                                         app.state = AppState::ExportReport;
+                                    }
+                                    MenuItem::SimilarImages => {
+                                        app.similar_selected = 0;
+                                        app.similar_file_selected = 0;
+                                        app.scan_similar_images();
+                                        app.state = AppState::SimilarImages;
+                                    }
+                                    MenuItem::FolderSync => {
+                                        app.folder_sync_log.clear();
+                                        app.state = AppState::FolderSync;
+                                    }
+                                    MenuItem::KeybindCustom => {
+                                        app.keybind_selected = 0;
+                                        app.keybind_editing = false;
+                                        app.state = AppState::KeybindCustom;
                                     }
                                     _ => app.start_single(item),
                                 }
                             }
-                        }
-                        _ => {}
-                    },
-                    AppState::StepSelect => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.step_selected > 0 { app.step_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.step_selected < FULL_STEP_LABELS.len() - 1 { app.step_selected += 1; }
-                        }
-                        KeyCode::Char(' ') => {
-                            let i = app.step_selected;
-                            app.step_enabled[i] = !app.step_enabled[i];
-                        }
-                        KeyCode::Char('a') => {
-                            let all_on = app.step_enabled.iter().all(|&e| e);
-                            for e in app.step_enabled.iter_mut() { *e = !all_on; }
-                        }
-                        KeyCode::Enter => {
-                            app.confirm_action = Some(ConfirmAction::StartProcessing);
-                            app.confirm_yes = true;
-                            app.state = AppState::ConfirmDialog;
-                        }
-                        _ => {}
-                    },
-                    AppState::Preview => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::StepSelect,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            app.preview_scroll = app.preview_scroll.saturating_sub(1);
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.preview_scroll < app.preview_items.len().saturating_sub(1) {
-                                app.preview_scroll += 1;
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            app.preview_scroll = app.preview_scroll.saturating_sub(10);
-                        }
-                        KeyCode::PageDown => {
-                            app.preview_scroll = (app.preview_scroll + 10).min(app.preview_items.len().saturating_sub(1));
-                        }
-                        KeyCode::Home => app.preview_scroll = 0,
-                        KeyCode::End => app.preview_scroll = app.preview_items.len().saturating_sub(1),
-                        KeyCode::Enter => {
-                            app.start_processing();
-                        }
-                        _ => {}
-                    },
-                    AppState::Processing => {
-                        if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-                            // Allow viewing log during processing
-                        }
-                        if !*app.is_processing.lock().unwrap() {
-                            let elapsed = app.start_time.lock().unwrap()
-                                .map(|t| t.elapsed().as_secs_f64())
-                                .unwrap_or(0.0);
-                            let errs = app.errors.lock().unwrap().len();
-                            let processed = *app.files_processed.lock().unwrap();
-                            let entry = HistoryEntry {
-                                timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                                action: "Full Process".into(),
-                                source: app.config.twitter_src.clone(),
-                                files_processed: processed,
-                                files_removed: 0,
-                                files_renamed: 0,
-                                original_size: 0,
-                                compressed_size: 0,
-                                duration_secs: elapsed,
-                                errors: errs,
-                            };
-                            app.history.add(entry);
-                            app.state = AppState::Done;
-                            notify_done(errs == 0);
-                        }
-                    }
-                    AppState::Done => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => { app.save_state(); return Ok(()); }
-                        KeyCode::Char('r') | KeyCode::Enter => {
-                            app.state = AppState::Menu;
-                        }
-                        KeyCode::Char('/') => {
-                            app.search_mode = true;
-                            app.search_query.clear();
-                        }
-                        _ => {}
-                    },
-                    AppState::Settings => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.settings_selected > 0 { app.settings_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.settings_selected < 7 { app.settings_selected += 1; }
-                        }
-                        KeyCode::Enter => {
-                            let _ = app.config.save();
-                            app.state = AppState::Menu;
-                        }
-                        _ => {}
-                    },
-                    // Feature #4: Batch Queue
-                    AppState::BatchQueue => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.batch_selected > 0 { app.batch_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.batch_selected < app.batch_queue.len() { app.batch_selected += 1; }
-                        }
-                        KeyCode::Char('a') => {
-                            app.batch_adding = true;
-                            app.batch_input.clear();
-                        }
-                        KeyCode::Char('d') => {
-                            if app.batch_selected < app.batch_queue.len() {
-                                app.batch_queue.remove(app.batch_selected);
-                                if app.batch_selected > 0 { app.batch_selected -= 1; }
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if app.batch_adding {
-                                if !app.batch_input.is_empty() {
-                                    app.batch_queue.push(BatchJob {
-                                        path: app.batch_input.clone(),
-                                        status: "pending".into(),
-                                        files_processed: 0,
-                                    });
-                                }
-                                app.batch_adding = false;
-                                app.batch_input.clear();
-                            } else if !app.batch_queue.is_empty() {
-                                // Process batch queue - collect paths first to avoid borrow issues
-                                let paths: Vec<String> = app.batch_queue.iter().map(|j| j.path.clone()).collect();
-                                for (i, path) in paths.iter().enumerate() {
-                                    if let Some(job) = app.batch_queue.get_mut(i) {
-                                        job.status = "processing".into();
-                                    }
-                                    let old_dest = app.config.dest.clone();
-                                    app.config.dest = path.clone();
-                                    app.start_processing();
-                                    app.config.dest = old_dest;
-                                    if let Some(job) = app.batch_queue.get_mut(i) {
-                                        job.status = "done".into();
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char(c) if app.batch_adding => {
-                            app.batch_input.push(c);
-                        }
-                        KeyCode::Backspace if app.batch_adding => {
-                            app.batch_input.pop();
-                        }
-                        _ => {}
-                    },
-                    // Feature #3: Duplicate Groups
-                    AppState::DuplicateGroups => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.dup_group_selected > 0 { app.dup_group_selected -= 1; }
-                            app.dup_file_selected = 0;
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.dup_group_selected < app.duplicate_groups.len().saturating_sub(1) {
-                                app.dup_group_selected += 1;
-                            }
-                            app.dup_file_selected = 0;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            if app.dup_file_selected > 0 { app.dup_file_selected -= 1; }
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            if app.dup_group_selected < app.duplicate_groups.len() {
-                                let group = &app.duplicate_groups[app.dup_group_selected];
-                                if app.dup_file_selected < group.files.len().saturating_sub(1) {
-                                    app.dup_file_selected += 1;
-                                }
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            if app.dup_group_selected < app.duplicate_groups.len() {
-                                app.duplicate_groups[app.dup_group_selected].selected = app.dup_file_selected;
-                            }
-                        }
-                        KeyCode::Char('x') => {
-                            // Delete non-selected duplicates
-                            if app.dup_group_selected < app.duplicate_groups.len() {
-                                let group = &app.duplicate_groups[app.dup_group_selected];
-                                let keep = group.selected;
-                                for (i, (path, _)) in group.files.iter().enumerate() {
-                                    if i != keep && !app.dry_run {
-                                        let _ = fs::remove_file(path);
-                                    }
-                                }
-                                if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Removed {} duplicates (kept #{})", group.files.len() - 1, keep + 1));
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    // Feature #8: Stats
-                    AppState::Stats => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => app.stats_scroll = app.stats_scroll.saturating_sub(1),
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.stats_scroll < 20 { app.stats_scroll += 1; }
-                        }
-                        _ => {}
-                    },
-                    // Feature #9: Profiles
-                    AppState::Profiles => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.profile_selected > 0 { app.profile_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.profile_selected < app.config.profiles.len() + 1 { app.profile_selected += 1; }
-                        }
-                        KeyCode::Char('a') => {
-                            app.profile_adding = true;
-                            app.profile_input.clear();
-                        }
-                        KeyCode::Enter => {
-                            if app.profile_adding {
-                                if !app.profile_input.is_empty() {
-                                    app.save_profile(app.profile_input.clone());
-                                    app.profile_adding = false;
-                                    app.profile_input.clear();
-                                }
-                            } else if app.profile_selected < app.config.profiles.len() {
-                                app.load_profile(app.profile_selected);
-                                if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Loaded profile: {}", app.config.profiles[app.profile_selected].name));
-                                }
-                            } else if app.profile_selected == app.config.profiles.len() {
-                                // Clear history option
-                                app.confirm_action = Some(ConfirmAction::ClearHistory);
-                                app.confirm_yes = true;
-                                app.state = AppState::ConfirmDialog;
-                            } else {
-                                // Clear undo option
-                                app.confirm_action = Some(ConfirmAction::ClearUndo);
-                                app.confirm_yes = true;
-                                app.state = AppState::ConfirmDialog;
-                            }
-                        }
-                        KeyCode::Char('d') => {
-                            if app.profile_selected < app.config.profiles.len() {
-                                app.config.profiles.remove(app.profile_selected);
-                                let _ = app.config.save();
-                                if app.profile_selected > 0 { app.profile_selected -= 1; }
-                            }
-                        }
-                        KeyCode::Char(c) if app.profile_adding => {
-                            app.profile_input.push(c);
-                        }
-                        KeyCode::Backspace if app.profile_adding => {
-                            app.profile_input.pop();
-                        }
-                        _ => {}
-                    },
-                    // Feature #19: JXL Settings
-                    AppState::JxlSettings => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.settings_selected > 0 { app.settings_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.settings_selected < 2 { app.settings_selected += 1; }
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            if app.settings_selected == 0 && app.config.jxl_quality > 1 {
-                                app.config.jxl_quality -= 5;
-                            }
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            if app.settings_selected == 0 && app.config.jxl_quality < 100 {
-                                app.config.jxl_quality += 5;
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            if app.settings_selected == 1 {
-                                app.config.jxl_lossless = !app.config.jxl_lossless;
-                            }
-                        }
-                        KeyCode::Enter => {
-                            let _ = app.config.save();
-                            app.state = AppState::Menu;
-                        }
-                        _ => {}
-                    },
-                    // Feature #20: Watch Mode
-                    AppState::WatchMode => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Char('w') => {
-                            app.watch_active = !app.watch_active;
-                            if app.watch_active {
-                                app.watch_processed = 0;
-                                app.watch_last_scan = Instant::now();
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            app.batch_adding = true;
-                            app.batch_input.clear();
-                        }
-                        KeyCode::Char(c) if app.batch_adding => {
-                            app.batch_input.push(c);
-                        }
-                        KeyCode::Backspace if app.batch_adding => {
-                            app.batch_input.pop();
-                        }
-                        KeyCode::Enter if app.batch_adding => {
-                            if !app.batch_input.is_empty() {
-                                app.config.watch_dirs.push(app.batch_input.clone());
-                                let _ = app.config.save();
-                            }
-                            app.batch_adding = false;
-                            app.batch_input.clear();
-                        }
-                        _ => {}
-                    },
-                    // Feature #6, #7: Filter & Sort
-                    AppState::FilterSort => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.filter_selected > 0 { app.filter_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.filter_selected < 4 { app.filter_selected += 1; }
-                        }
-                        KeyCode::Enter => {
-                            let _ = app.config.save();
-                            app.state = AppState::Menu;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            match app.filter_selected {
-                                1 => { if app.filter.min_size_kb > 0 { app.filter.min_size_kb -= 100; } }
-                                2 => { if app.filter.max_size_kb > 0 { app.filter.max_size_kb -= 100; } }
-                                4 => {
-                                    app.sort_config = match app.sort_config.field {
-                                        SortField::Name => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
-                                        SortField::Size => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
-                                        SortField::Date => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
-                                        SortField::Type => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
-                                    };
-                                }
-                                _ => {}
-                            }
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            match app.filter_selected {
-                                1 => { app.filter.min_size_kb += 100; }
-                                2 => { app.filter.max_size_kb += 100; }
-                                4 => {
-                                    app.sort_config = match app.sort_config.field {
-                                        SortField::Name => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
-                                        SortField::Size => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
-                                        SortField::Date => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
-                                        SortField::Type => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
-                                    };
-                                }
-                                _ => {}
-                            }
-                        }
-                        KeyCode::Backspace => {
-                            if app.filter_selected == 3 {
-                                app.filter.name_pattern.pop();
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            if app.filter_selected == 3 {
-                                app.filter.name_pattern.push(c);
-                            }
-                        }
-                        _ => {}
-                    },
-                    // Feature #11: Info Panel
-                    AppState::InfoPanel => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => app.state = AppState::Preview,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.info_selected > 0 { app.info_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.info_selected < app.preview_items.len().saturating_sub(1) {
-                                app.info_selected += 1;
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::ConfirmDialog => {}, // Handled above
-                    AppState::Help => {}, // Handled above
-                    // New feature state handlers
-                    AppState::SizeCompare => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.size_compare_scroll > 0 { app.size_compare_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.size_compare_scroll < app.size_comparisons.len().saturating_sub(1) {
-                                app.size_compare_scroll += 1;
-                            }
-                        }
-                        KeyCode::Char('r') => app.build_size_comparisons(),
-                        KeyCode::Char('s') => {
-                            app.build_compression_stats();
-                            app.state = AppState::CompressionGraph;
-                        }
-                        _ => {}
-                    },
-                    AppState::ErrorPanel => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.error_scroll > 0 { app.error_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.error_scroll < app.error_details.len().saturating_sub(1) {
-                                app.error_scroll += 1;
-                            }
-                        }
-                        KeyCode::Char('c') => {
-                            app.error_details.clear();
-                            if let Ok(mut errs) = app.errors.lock() { errs.clear(); }
-                        }
-                        KeyCode::Char('e') => {
-                            let _ = app.export_log();
-                        }
-                        _ => {}
-                    },
-                    AppState::Presets => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.preset_selected > 0 { app.preset_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.preset_selected < app.presets.len().saturating_sub(1) {
-                                app.preset_selected += 1;
-                            }
-                        }
-                        KeyCode::Enter => {
-                            app.apply_preset(app.preset_selected);
-                            let _ = app.config.save();
-                            app.state = AppState::Menu;
-                        }
-                        _ => {}
-                    },
-                    AppState::Scheduler => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.scheduler_selected > 0 { app.scheduler_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.scheduler_selected < app.scheduler_jobs.len().saturating_sub(1) {
-                                app.scheduler_selected += 1;
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            app.scheduler_jobs.push(SchedulerJob::default());
-                            app.scheduler_selected = app.scheduler_jobs.len() - 1;
-                            app.scheduler_editing = true;
-                            app.scheduler_field = 0;
-                        }
-                        KeyCode::Char('e') => {
-                            if !app.scheduler_jobs.is_empty() {
-                                app.scheduler_editing = true;
-                                app.scheduler_field = 0;
-                            }
-                        }
-                        KeyCode::Char('t') => {
-                            if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
-                                job.enabled = !job.enabled;
-                            }
-                        }
-                        KeyCode::Char('d') => {
-                            if !app.scheduler_jobs.is_empty() {
-                                app.scheduler_jobs.remove(app.scheduler_selected);
-                                if app.scheduler_selected >= app.scheduler_jobs.len() && app.scheduler_selected > 0 {
-                                    app.scheduler_selected -= 1;
-                                }
-                            }
-                        }
-                        KeyCode::Enter if app.scheduler_editing => {
-                            app.scheduler_editing = false;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') if app.scheduler_editing => {
-                            if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
-                                match app.scheduler_field {
-                                    0 => { if job.hour > 0 { job.hour -= 1; } }
-                                    1 => { if job.minute > 0 { job.minute -= 1; } }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        KeyCode::Right | KeyCode::Char('l') if app.scheduler_editing => {
-                            if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
-                                match app.scheduler_field {
-                                    0 => { if job.hour < 23 { job.hour += 1; } }
-                                    1 => { if job.minute < 59 { job.minute += 1; } }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        KeyCode::Tab if app.scheduler_editing => {
-                            app.scheduler_field = (app.scheduler_field + 1) % 2;
-                        }
-                        _ => {}
-                    },
-                    AppState::HistoryExport => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.export_format > 0 { app.export_format -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.export_format < 1 { app.export_format += 1; }
-                        }
-                        KeyCode::Enter => {
-                            let result = if app.export_format == 0 {
-                                app.export_history_csv()
-                            } else {
-                                app.export_history_json()
-                            };
-                            match result {
-                                Ok(path) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Exported to: {}", path));
-                                    }
-                                    app.state = AppState::Menu;
-                                }
-                                Err(e) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Export failed: {}", e));
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::ThemeEditor => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.theme_edit_selected > 0 { app.theme_edit_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.theme_edit_selected < 9 { app.theme_edit_selected += 1; }
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            app.theme_edit_field = app.theme_edit_field.saturating_sub(1);
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            if app.theme_edit_field < 2 { app.theme_edit_field += 1; }
-                        }
-                        KeyCode::Char('a') => {
-                            app.save_custom_theme(&format!("Theme_{}", app.custom_themes.len() + 1));
-                        }
-                        KeyCode::Enter => {
-                            app.state = AppState::Menu;
-                        }
-                        _ => {}
-                    },
-                    AppState::DashboardCustom => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Stats,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.dashboard_selected > 0 { app.dashboard_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.dashboard_selected < 3 { app.dashboard_selected += 1; }
-                        }
-                        KeyCode::Char(' ') => {
-                            match app.dashboard_selected {
-                                0 => app.widget_layout.show_summary = !app.widget_layout.show_summary,
-                                1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
-                                2 => app.widget_layout.show_history = !app.widget_layout.show_history,
-                                3 => app.widget_layout.show_compression = !app.widget_layout.show_compression,
-                                _ => {}
-                            }
-                        }
-                        KeyCode::Enter => {
-                            let _ = fs::write(
-                                ".io_tool_dashboard.json",
-                                serde_json::to_string_pretty(&app.widget_layout).unwrap_or_default(),
-                            );
-                            app.state = AppState::Stats;
-                        }
-                        _ => {}
-                    },
-                    AppState::CompressionGraph => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.compress_scroll > 0 { app.compress_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.compress_scroll < app.compression_stats.len().saturating_sub(1) {
-                                app.compress_scroll += 1;
-                            }
-                        }
-                        KeyCode::Char('r') => app.build_compression_stats(),
-                        _ => {}
-                    },
-                    AppState::FileClassify => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.classify_selected > 0 { app.classify_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.classify_selected < app.classify_rules.len().saturating_sub(1) {
-                                app.classify_selected += 1;
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            app.classify_adding = true;
-                            app.classify_input.clear();
-                        }
-                        KeyCode::Char('d') => {
-                            if !app.classify_rules.is_empty() {
-                                app.classify_rules.remove(app.classify_selected);
-                                if app.classify_selected >= app.classify_rules.len() && app.classify_selected > 0 {
-                                    app.classify_selected -= 1;
-                                }
-                            }
-                        }
-                        KeyCode::Enter if app.classify_adding => {
-                            let parts: Vec<&str> = app.classify_input.splitn(2, ':').collect();
-                            if parts.len() == 2 {
-                                app.classify_rules.push((parts[0].trim().to_string(), parts[1].trim().to_string()));
-                            }
-                            app.classify_adding = false;
-                            app.classify_input.clear();
-                        }
-                        KeyCode::Char('r') => app.classify_files(),
-                        KeyCode::Char(c) if app.classify_adding => {
-                            app.classify_input.push(c);
-                        }
-                        KeyCode::Backspace if app.classify_adding => {
-                            app.classify_input.pop();
-                        }
-                        _ => {}
-                    },
-                    AppState::MetaEdit => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.meta_scroll > 0 { app.meta_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.meta_scroll < app.meta_files.len().saturating_sub(1) {
-                                app.meta_scroll += 1;
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            if let Some((_, selected)) = app.meta_files.get_mut(app.meta_scroll) {
-                                *selected = !*selected;
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            for (_, selected) in app.meta_files.iter_mut() {
-                                *selected = true;
-                            }
-                        }
-                        KeyCode::Tab => {
-                            app.meta_field = (app.meta_field + 1) % 3;
-                        }
-                        KeyCode::Char('x') => {
-                            let count = app.meta_files.iter().filter(|(_, s)| *s).count();
-                            app.meta_files.retain(|(_, s)| !s);
-                            if let Ok(mut logs) = app.logs.lock() {
-                                logs.push(format!("Removed metadata from {} files", count));
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::ConfigIO => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.config_io_selected > 0 { app.config_io_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.config_io_selected < 1 { app.config_io_selected += 1; }
-                        }
-                        KeyCode::Char('e') => {
-                            match app.export_config() {
-                                Ok(path) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Config exported to: {}", path));
-                                    }
-                                }
-                                Err(e) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Export failed: {}", e));
-                                    }
-                                }
-                            }
-                        }
-                        KeyCode::Char('i') => {
-                            app.config_io_adding = true;
-                            app.config_io_path.clear();
-                        }
-                        KeyCode::Enter if app.config_io_adding => {
-                            let path = app.config_io_path.clone();
-                            match app.import_config(&path) {
-                                Ok(()) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push("Config imported successfully".into());
-                                    }
-                                }
-                                Err(e) => {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Import failed: {}", e));
-                                    }
-                                }
-                            }
-                            app.config_io_adding = false;
-                            app.config_io_path.clear();
-                        }
-                        KeyCode::Char(c) if app.config_io_adding => {
-                            app.config_io_path.push(c);
-                        }
-                        KeyCode::Backspace if app.config_io_adding => {
-                            app.config_io_path.pop();
-                        }
-                        _ => {}
-                    },
-                    AppState::Plugins => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.plugin_selected > 0 { app.plugin_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.plugin_selected < app.plugins.len().saturating_sub(1) {
-                                app.plugin_selected += 1;
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            if let Some(plugin) = app.plugins.get_mut(app.plugin_selected) {
-                                plugin.enabled = !plugin.enabled;
-                            }
-                        }
-                        KeyCode::Char('r') => app.scan_plugins(),
-                        KeyCode::Char('o') => {
-                            if let Err(e) = std::process::Command::new("explorer").arg(&app.plugin_dir).spawn() {
-                                if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Failed to open: {}", e));
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::StatusbarCustom => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.statusbar_selected > 0 { app.statusbar_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.statusbar_selected < app.statusbar_items.len().saturating_sub(1) {
-                                app.statusbar_selected += 1;
-                            }
-                        }
-                        KeyCode::Char(' ') => {
-                            if let Some((_, enabled)) = app.statusbar_items.get_mut(app.statusbar_selected) {
-                                *enabled = !*enabled;
-                            }
-                        }
-                        KeyCode::Enter => {
-                            app.save_statusbar_config();
-                            app.state = AppState::Menu;
-                        }
-                        _ => {}
-                    },
-                    // Batch 3 event handlers
-                    AppState::ImagePreview => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if let Some(ref mut p) = app.image_preview {
-                                if p.height > 0 { p.height -= 1; }
-                            }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if let Some(ref mut p) = app.image_preview {
-                                p.height += 1;
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::SplitPane => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.split_mode = false;
-                            app.state = AppState::Menu;
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.split_left_scroll > 0 { app.split_left_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.split_left_scroll += 1;
-                        }
-                        KeyCode::Tab => {
-                            app.split_mode = !app.split_mode;
-                        }
-                        _ => {}
-                    },
-                    AppState::QuickActions => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.quick_selected > 0 { app.quick_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.quick_selected < app.quick_actions.len().saturating_sub(1) {
-                                app.quick_selected += 1;
-                            }
-                        }
-                        KeyCode::Enter => {
-                            if let Some((_, idx)) = app.quick_actions.get(app.quick_selected) {
-                                let menu_items = MenuItem::all();
-                                if *idx < menu_items.len() {
-                                    let item = menu_items[*idx];
+                            KeyCode::Char(c) if c.is_ascii_digit() => {
+                                let idx = c.to_digit(10).unwrap() as usize;
+                                if idx >= 1 && idx <= app.menu_items.len() {
+                                    let item = app.menu_items[idx - 1];
                                     match item {
                                         MenuItem::FullProcess => app.state = AppState::StepSelect,
                                         MenuItem::Settings => app.state = AppState::Settings,
-                                        MenuItem::Statistics => app.state = AppState::Stats,
+                                        MenuItem::BatchQueue => { app.batch_selected = 0; app.state = AppState::BatchQueue; }
+                                        MenuItem::Profiles => { app.profile_selected = 0; app.state = AppState::Profiles; }
+                                        MenuItem::WatchMode => app.state = AppState::WatchMode,
+                                        MenuItem::Statistics => { app.stats_scroll = 0; app.state = AppState::Stats; }
+                                        MenuItem::Duplicates => {
+                                            app.scan_duplicates();
+                                            app.dup_group_selected = 0;
+                                            app.state = AppState::DuplicateGroups;
+                                        }
+                                        MenuItem::JxlSettings => app.state = AppState::JxlSettings,
+                                        MenuItem::SizeCompare => {
+                                            app.build_size_comparisons();
+                                            app.state = AppState::SizeCompare;
+                                        }
+                                        MenuItem::ErrorPanel => {
+                                            app.collect_error_details();
+                                            app.state = AppState::ErrorPanel;
+                                        }
+                                        MenuItem::Presets => app.state = AppState::Presets,
+                                        MenuItem::Scheduler => app.state = AppState::Scheduler,
+                                        MenuItem::HistoryExport => app.state = AppState::HistoryExport,
+                                        MenuItem::ThemeEditor => {
+                                            app.load_custom_themes();
+                                            app.state = AppState::ThemeEditor;
+                                        }
+                                        MenuItem::CompressionGraph => {
+                                            app.build_compression_stats();
+                                            app.state = AppState::CompressionGraph;
+                                        }
+                                        MenuItem::FileClassify => app.state = AppState::FileClassify,
+                                        MenuItem::MetaEdit => {
+                                            app.load_meta_files();
+                                            app.state = AppState::MetaEdit;
+                                        }
+                                        MenuItem::ConfigIO => app.state = AppState::ConfigIO,
+                                        MenuItem::Plugins => {
+                                            app.scan_plugins();
+                                            app.state = AppState::Plugins;
+                                        }
+                                        // Batch 3 dispatch (number keys)
+                                        MenuItem::ImagePreview => {
+                                            {let dest = app.config.dest.clone(); app.generate_image_preview(&dest);}
+                                            app.state = AppState::ImagePreview;
+                                        }
+                                        MenuItem::FuzzyFinder => {
+                                            app.fuzzy_mode = true;
+                                            app.fuzzy_query.clear();
+                                            app.fuzzy_results.clear();
+                                            app.fuzzy_selected = 0;
+                                        }
+                                        MenuItem::SplitPane => {
+                                            app.split_mode = true;
+                                            app.state = AppState::SplitPane;
+                                        }
+                                        MenuItem::QuickActions => {
+                                            app.quick_selected = 0;
+                                            app.state = AppState::QuickActions;
+                                        }
+                                        MenuItem::RecentFiles => {
+                                            app.recent_scroll = 0;
+                                            app.state = AppState::RecentFiles;
+                                        }
+                                        MenuItem::TagSystem => {
+                                            app.tag_selected = 0;
+                                            app.state = AppState::TagSystem;
+                                        }
+                                        MenuItem::SideBySideDiff => {
+                                            app.build_size_comparisons();
+                                            app.state = AppState::SideBySideDiff;
+                                        }
+                                        MenuItem::FileTreeView => {
+                                            app.build_file_tree();
+                                            app.state = AppState::FileTreeView;
+                                        }
+                                        MenuItem::RenamePattern => {
+                                            app.rename_selected = 0;
+                                            app.state = AppState::RenamePattern;
+                                        }
+                                        MenuItem::Timeline => {
+                                            app.build_timeline();
+                                            app.state = AppState::Timeline;
+                                        }
+                                        MenuItem::CommandPalette => {
+                                            app.palette_open = true;
+                                            app.palette_query.clear();
+                                            app.palette_results.clear();
+                                            app.state = AppState::CommandPalette;
+                                        }
+                                        MenuItem::NotificationCenter => {
+                                            app.notif_scroll = 0;
+                                            app.state = AppState::NotificationCenter;
+                                        }
+                                        MenuItem::ExportReport => {
+                                            app.report_format = 0;
+                                            app.state = AppState::ExportReport;
+                                        }
+                                        MenuItem::SimilarImages => {
+                                            app.similar_selected = 0;
+                                            app.similar_file_selected = 0;
+                                            app.scan_similar_images();
+                                            app.state = AppState::SimilarImages;
+                                        }
+                                        MenuItem::FolderSync => {
+                                            app.folder_sync_log.clear();
+                                            app.state = AppState::FolderSync;
+                                        }
+                                        MenuItem::KeybindCustom => {
+                                            app.keybind_selected = 0;
+                                            app.keybind_editing = false;
+                                            app.state = AppState::KeybindCustom;
+                                        }
+                                        _ => app.start_single(item),
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::StepSelect => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.step_selected > 0 { app.step_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.step_selected < FULL_STEP_LABELS.len() - 1 { app.step_selected += 1; }
+                            }
+                            KeyCode::Char(' ') => {
+                                let i = app.step_selected;
+                                app.step_enabled[i] = !app.step_enabled[i];
+                            }
+                            KeyCode::Char('a') => {
+                                let all_on = app.step_enabled.iter().all(|&e| e);
+                                for e in app.step_enabled.iter_mut() { *e = !all_on; }
+                            }
+                            KeyCode::Enter => {
+                                app.confirm_action = Some(ConfirmAction::StartProcessing);
+                                app.confirm_yes = true;
+                                app.state = AppState::ConfirmDialog;
+                            }
+                            _ => {}
+                        },
+                        AppState::Preview => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::StepSelect,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                app.preview_scroll = app.preview_scroll.saturating_sub(1);
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.preview_scroll < app.preview_items.len().saturating_sub(1) {
+                                    app.preview_scroll += 1;
+                                }
+                            }
+                            KeyCode::PageUp => {
+                                app.preview_scroll = app.preview_scroll.saturating_sub(10);
+                            }
+                            KeyCode::PageDown => {
+                                app.preview_scroll = (app.preview_scroll + 10).min(app.preview_items.len().saturating_sub(1));
+                            }
+                            KeyCode::Home => app.preview_scroll = 0,
+                            KeyCode::End => app.preview_scroll = app.preview_items.len().saturating_sub(1),
+                            KeyCode::Enter => {
+                                app.start_processing();
+                            }
+                            _ => {}
+                        },
+                        AppState::Processing => {
+                            if key.code == KeyCode::Esc {
+                                // Interrupt processing
+                                *app.is_interrupted.lock().unwrap() = true;
+                                *app.is_processing.lock().unwrap() = false;
+                                app.state = AppState::Done;
+                            }
+                            if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+                                // Allow viewing log during processing
+                            }
+                            if !*app.is_processing.lock().unwrap() {
+                                let elapsed = app.start_time.lock().unwrap()
+                                    .map(|t| t.elapsed().as_secs_f64())
+                                    .unwrap_or(0.0);
+                                let errs = app.errors.lock().unwrap().len();
+                                let processed = *app.files_processed.lock().unwrap();
+                                let entry = HistoryEntry {
+                                    timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                    action: "Full Process".into(),
+                                    source: app.config.twitter_src.clone(),
+                                    files_processed: processed,
+                                    files_removed: 0,
+                                    files_renamed: 0,
+                                    original_size: 0,
+                                    compressed_size: 0,
+                                    duration_secs: elapsed,
+                                    errors: errs,
+                                };
+                                app.history.add(entry);
+                                app.state = AppState::Done;
+                                notify_done(errs == 0);
+                            }
+                        }
+                        AppState::Done => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => { app.save_state(); return Ok(()); }
+                            KeyCode::Char('r') | KeyCode::Enter => {
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Char('/') => {
+                                app.search_mode = true;
+                                app.search_query.clear();
+                            }
+                            _ => {}
+                        },
+                        AppState::Settings => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.settings_selected > 0 { app.settings_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.settings_selected < 7 { app.settings_selected += 1; }
+                            }
+                            KeyCode::Enter => {
+                                let _ = app.config.save();
+                                app.state = AppState::Menu;
+                            }
+                            _ => {}
+                        },
+                        // Feature #4: Batch Queue
+                        AppState::BatchQueue => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.batch_selected > 0 { app.batch_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.batch_selected < app.batch_queue.len() { app.batch_selected += 1; }
+                            }
+                            KeyCode::Char('a') => {
+                                app.batch_adding = true;
+                                app.batch_input.clear();
+                            }
+                            KeyCode::Char('d') => {
+                                if app.batch_selected < app.batch_queue.len() {
+                                    app.batch_queue.remove(app.batch_selected);
+                                    if app.batch_selected > 0 { app.batch_selected -= 1; }
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if app.batch_adding {
+                                    if !app.batch_input.is_empty() {
+                                        app.batch_queue.push(BatchJob {
+                                            path: app.batch_input.clone(),
+                                            status: "pending".into(),
+                                            files_processed: 0,
+                                        });
+                                    }
+                                    app.batch_adding = false;
+                                    app.batch_input.clear();
+                                } else if !app.batch_queue.is_empty() {
+                                    // Process batch queue - collect paths first to avoid borrow issues
+                                    let paths: Vec<String> = app.batch_queue.iter().map(|j| j.path.clone()).collect();
+                                    for (i, path) in paths.iter().enumerate() {
+                                        if let Some(job) = app.batch_queue.get_mut(i) {
+                                            job.status = "processing".into();
+                                        }
+                                        let old_dest = app.config.dest.clone();
+                                        app.config.dest = path.clone();
+                                        app.start_processing();
+                                        app.config.dest = old_dest;
+                                        if let Some(job) = app.batch_queue.get_mut(i) {
+                                            job.status = "done".into();
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char(c) if app.batch_adding => {
+                                app.batch_input.push(c);
+                            }
+                            KeyCode::Backspace if app.batch_adding => {
+                                app.batch_input.pop();
+                            }
+                            _ => {}
+                        },
+                        // Feature #3: Duplicate Groups
+                        AppState::DuplicateGroups => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.dup_group_selected > 0 { app.dup_group_selected -= 1; }
+                                app.dup_file_selected = 0;
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.dup_group_selected < app.duplicate_groups.len().saturating_sub(1) {
+                                    app.dup_group_selected += 1;
+                                }
+                                app.dup_file_selected = 0;
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                if app.dup_file_selected > 0 { app.dup_file_selected -= 1; }
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                if app.dup_group_selected < app.duplicate_groups.len() {
+                                    let group = &app.duplicate_groups[app.dup_group_selected];
+                                    if app.dup_file_selected < group.files.len().saturating_sub(1) {
+                                        app.dup_file_selected += 1;
+                                    }
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if app.dup_group_selected < app.duplicate_groups.len() {
+                                    app.duplicate_groups[app.dup_group_selected].selected = app.dup_file_selected;
+                                }
+                            }
+                            KeyCode::Char('x') => {
+                                // Delete non-selected duplicates
+                                if app.dup_group_selected < app.duplicate_groups.len() {
+                                    let group = &app.duplicate_groups[app.dup_group_selected];
+                                    let keep = group.selected;
+                                    for (i, (path, _)) in group.files.iter().enumerate() {
+                                        if i != keep && !app.dry_run {
+                                            let _ = fs::remove_file(path);
+                                        }
+                                    }
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Removed {} duplicates (kept #{})", group.files.len() - 1, keep + 1));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        // Feature #8: Stats
+                        AppState::Stats => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => app.stats_scroll = app.stats_scroll.saturating_sub(1),
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.stats_scroll < 20 { app.stats_scroll += 1; }
+                            }
+                            _ => {}
+                        },
+                        // Feature #9: Profiles
+                        AppState::Profiles => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.profile_selected > 0 { app.profile_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.profile_selected < app.config.profiles.len() + 1 { app.profile_selected += 1; }
+                            }
+                            KeyCode::Char('a') => {
+                                app.profile_adding = true;
+                                app.profile_input.clear();
+                            }
+                            KeyCode::Enter => {
+                                if app.profile_adding {
+                                    if !app.profile_input.is_empty() {
+                                        app.save_profile(app.profile_input.clone());
+                                        app.profile_adding = false;
+                                        app.profile_input.clear();
+                                    }
+                                } else if app.profile_selected < app.config.profiles.len() {
+                                    app.load_profile(app.profile_selected);
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Loaded profile: {}", app.config.profiles[app.profile_selected].name));
+                                    }
+                                } else if app.profile_selected == app.config.profiles.len() {
+                                    // Clear history option
+                                    app.confirm_action = Some(ConfirmAction::ClearHistory);
+                                    app.confirm_yes = true;
+                                    app.state = AppState::ConfirmDialog;
+                                } else {
+                                    // Clear undo option
+                                    app.confirm_action = Some(ConfirmAction::ClearUndo);
+                                    app.confirm_yes = true;
+                                    app.state = AppState::ConfirmDialog;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if app.profile_selected < app.config.profiles.len() {
+                                    app.config.profiles.remove(app.profile_selected);
+                                    let _ = app.config.save();
+                                    if app.profile_selected > 0 { app.profile_selected -= 1; }
+                                }
+                            }
+                            KeyCode::Char(c) if app.profile_adding => {
+                                app.profile_input.push(c);
+                            }
+                            KeyCode::Backspace if app.profile_adding => {
+                                app.profile_input.pop();
+                            }
+                            _ => {}
+                        },
+                        // Feature #19: JXL Settings
+                        AppState::JxlSettings => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.settings_selected > 0 { app.settings_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.settings_selected < 2 { app.settings_selected += 1; }
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                if app.settings_selected == 0 && app.config.jxl_quality > 1 {
+                                    app.config.jxl_quality -= 5;
+                                }
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                if app.settings_selected == 0 && app.config.jxl_quality < 100 {
+                                    app.config.jxl_quality += 5;
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if app.settings_selected == 1 {
+                                    app.config.jxl_lossless = !app.config.jxl_lossless;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                let _ = app.config.save();
+                                app.state = AppState::Menu;
+                            }
+                            _ => {}
+                        },
+                        // Feature #20: Watch Mode
+                        AppState::WatchMode => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Char('w') => {
+                                app.watch_active = !app.watch_active;
+                                if app.watch_active {
+                                    app.watch_processed = 0;
+                                    app.watch_last_scan = Instant::now();
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                app.batch_adding = true;
+                                app.batch_input.clear();
+                            }
+                            KeyCode::Char(c) if app.batch_adding => {
+                                app.batch_input.push(c);
+                            }
+                            KeyCode::Backspace if app.batch_adding => {
+                                app.batch_input.pop();
+                            }
+                            KeyCode::Enter if app.batch_adding => {
+                                if !app.batch_input.is_empty() {
+                                    app.config.watch_dirs.push(app.batch_input.clone());
+                                    let _ = app.config.save();
+                                }
+                                app.batch_adding = false;
+                                app.batch_input.clear();
+                            }
+                            _ => {}
+                        },
+                        // Feature #6, #7: Filter & Sort
+                        AppState::FilterSort => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.filter_selected > 0 { app.filter_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.filter_selected < 4 { app.filter_selected += 1; }
+                            }
+                            KeyCode::Enter => {
+                                let _ = app.config.save();
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                match app.filter_selected {
+                                    1 => { if app.filter.min_size_kb > 0 { app.filter.min_size_kb -= 100; } }
+                                    2 => { if app.filter.max_size_kb > 0 { app.filter.max_size_kb -= 100; } }
+                                    4 => {
+                                        app.sort_config = match app.sort_config.field {
+                                            SortField::Name => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
+                                            SortField::Size => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
+                                            SortField::Date => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
+                                            SortField::Type => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
+                                        };
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                match app.filter_selected {
+                                    1 => { app.filter.min_size_kb += 100; }
+                                    2 => { app.filter.max_size_kb += 100; }
+                                    4 => {
+                                        app.sort_config = match app.sort_config.field {
+                                            SortField::Name => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
+                                            SortField::Size => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
+                                            SortField::Date => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
+                                            SortField::Type => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
+                                        };
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                if app.filter_selected == 3 {
+                                    app.filter.name_pattern.pop();
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                if app.filter_selected == 3 {
+                                    app.filter.name_pattern.push(c);
+                                }
+                            }
+                            _ => {}
+                        },
+                        // Feature #11: Info Panel
+                        AppState::InfoPanel => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => app.state = AppState::Preview,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.info_selected > 0 { app.info_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.info_selected < app.preview_items.len().saturating_sub(1) {
+                                    app.info_selected += 1;
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::ConfirmDialog => {}, // Handled above
+                        AppState::Help => {}, // Handled above
+                        // New feature state handlers
+                        AppState::SizeCompare => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.size_compare_scroll > 0 { app.size_compare_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.size_compare_scroll < app.size_comparisons.len().saturating_sub(1) {
+                                    app.size_compare_scroll += 1;
+                                }
+                            }
+                            KeyCode::Char('r') => app.build_size_comparisons(),
+                            KeyCode::Char('s') => {
+                                app.build_compression_stats();
+                                app.state = AppState::CompressionGraph;
+                            }
+                            _ => {}
+                        },
+                        AppState::ErrorPanel => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.error_scroll > 0 { app.error_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.error_scroll < app.error_details.len().saturating_sub(1) {
+                                    app.error_scroll += 1;
+                                }
+                            }
+                            KeyCode::Char('c') => {
+                                app.error_details.clear();
+                                if let Ok(mut errs) = app.errors.lock() { errs.clear(); }
+                            }
+                            KeyCode::Char('e') => {
+                                let _ = app.export_log();
+                            }
+                            _ => {}
+                        },
+                        AppState::Presets => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.preset_selected > 0 { app.preset_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.preset_selected < app.presets.len().saturating_sub(1) {
+                                    app.preset_selected += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                app.apply_preset(app.preset_selected);
+                                let _ = app.config.save();
+                                app.state = AppState::Menu;
+                            }
+                            _ => {}
+                        },
+                        AppState::Scheduler => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.scheduler_selected > 0 { app.scheduler_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.scheduler_selected < app.scheduler_jobs.len().saturating_sub(1) {
+                                    app.scheduler_selected += 1;
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                app.scheduler_jobs.push(SchedulerJob::default());
+                                app.scheduler_selected = app.scheduler_jobs.len() - 1;
+                                app.scheduler_editing = true;
+                                app.scheduler_field = 0;
+                            }
+                            KeyCode::Char('e') => {
+                                if !app.scheduler_jobs.is_empty() {
+                                    app.scheduler_editing = true;
+                                    app.scheduler_field = 0;
+                                }
+                            }
+                            KeyCode::Char('t') => {
+                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                    job.enabled = !job.enabled;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if !app.scheduler_jobs.is_empty() {
+                                    app.scheduler_jobs.remove(app.scheduler_selected);
+                                    if app.scheduler_selected >= app.scheduler_jobs.len() && app.scheduler_selected > 0 {
+                                        app.scheduler_selected -= 1;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter if app.scheduler_editing => {
+                                app.scheduler_editing = false;
+                            }
+                            KeyCode::Left | KeyCode::Char('h') if app.scheduler_editing => {
+                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                    match app.scheduler_field {
+                                        0 => { if job.hour > 0 { job.hour -= 1; } }
+                                        1 => { if job.minute > 0 { job.minute -= 1; } }
                                         _ => {}
                                     }
                                 }
                             }
-                        }
-                        _ => {}
-                    },
-                    AppState::RecentFiles => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.recent_scroll > 0 { app.recent_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.recent_scroll += 1;
-                        }
-                        _ => {}
-                    },
-                    AppState::TagSystem => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.tag_adding = false;
-                            app.state = AppState::Menu;
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.tag_selected > 0 { app.tag_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.tag_selected < app.file_tags.len().saturating_sub(1) {
-                                app.tag_selected += 1;
-                            }
-                        }
-                        KeyCode::Char('a') => {
-                            app.tag_adding = true;
-                            app.tag_input.clear();
-                        }
-                        KeyCode::Enter if app.tag_adding => {
-                            if !app.tag_input.is_empty() {
-                                app.add_file_tag("*".into(), app.tag_input.clone());
-                                app.tag_input.clear();
-                                app.tag_adding = false;
-                            }
-                        }
-                        KeyCode::Backspace if app.tag_adding => {
-                            app.tag_input.pop();
-                        }
-                        KeyCode::Char(c) if app.tag_adding => {
-                            app.tag_input.push(c);
-                        }
-                        _ => {}
-                    },
-                    AppState::SideBySideDiff => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.diff_scroll > 0 { app.diff_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.diff_scroll += 1;
-                        }
-                        _ => {}
-                    },
-                    AppState::FileTreeView => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.tree_selected > 0 { app.tree_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.tree_selected += 1;
-                        }
-                        KeyCode::Enter => {
-                            // Toggle expand/collapse
-                            fn toggle_node(nodes: &mut [FileTreeNode], idx: usize, counter: &mut usize) {
-                                for node in nodes.iter_mut() {
-                                    if *counter == idx {
-                                        node.expanded = !node.expanded;
-                                        return;
-                                    }
-                                    *counter += 1;
-                                    if node.expanded {
-                                        toggle_node(&mut node.children, idx, counter);
+                            KeyCode::Right | KeyCode::Char('l') if app.scheduler_editing => {
+                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                    match app.scheduler_field {
+                                        0 => { if job.hour < 23 { job.hour += 1; } }
+                                        1 => { if job.minute < 59 { job.minute += 1; } }
+                                        _ => {}
                                     }
                                 }
                             }
-                            let mut counter = 0;
-                            toggle_node(&mut app.file_tree, app.tree_selected, &mut counter);
-                        }
-                        _ => {}
-                    },
-                    AppState::RenamePattern => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => {
-                            app.rename_field = 0;
-                            app.state = AppState::Menu;
-                        }
-                        KeyCode::Tab => {
-                            app.rename_field = (app.rename_field + 1) % 2;
-                        }
-                        KeyCode::Char('a') => {
-                            app.rename_patterns.push(RenamePattern {
-                                pattern: String::new(),
-                                replacement: String::new(),
-                                preview: Vec::new(),
-                                use_regex: false,
-                            });
-                            app.rename_selected = app.rename_patterns.len() - 1;
-                        }
-                        KeyCode::Char('r') => {
-                            if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
-                                p.use_regex = !p.use_regex;
+                            KeyCode::Tab if app.scheduler_editing => {
+                                app.scheduler_field = (app.scheduler_field + 1) % 2;
                             }
-                        }
-                        KeyCode::Char('p') => {
-                            app.preview_rename_pattern();
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.rename_selected > 0 { app.rename_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.rename_selected < app.rename_patterns.len().saturating_sub(1) {
-                                app.rename_selected += 1;
+                            _ => {}
+                        },
+                        AppState::HistoryExport => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.export_format > 0 { app.export_format -= 1; }
                             }
-                        }
-                        KeyCode::Backspace => {
-                            if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
-                                if app.rename_field == 0 { p.pattern.pop(); } else { p.replacement.pop(); }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.export_format < 1 { app.export_format += 1; }
                             }
-                        }
-                        KeyCode::Char(c) => {
-                            if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
-                                if app.rename_field == 0 { p.pattern.push(c); } else { p.replacement.push(c); }
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::Timeline => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.timeline_scroll > 0 { app.timeline_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.timeline_scroll += 1;
-                        }
-                        _ => {}
-                    },
-                    AppState::NotificationCenter => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.notif_scroll > 0 { app.notif_scroll -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            app.notif_scroll += 1;
-                        }
-                        KeyCode::Char('c') => {
-                            app.notifications.clear();
-                            app.notif_scroll = 0;
-                        }
-                        KeyCode::Enter => {
-                            if let Some(n) = app.notifications.get_mut(app.notif_scroll) {
-                                n.read = true;
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::ExportReport => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            app.report_format = 0;
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            app.report_format = 1;
-                        }
-                        KeyCode::Enter => {
-                            match app.export_report() {
-                                Ok(path) => {
-                                    app.add_notification(format!("Report exported to {}", path), "success".into());
-                                    app.state = AppState::Menu;
-                                }
-                                Err(e) => {
-                                    app.add_notification(format!("Export failed: {}", e), "error".into());
-                                }
-                            }
-                        }
-                        _ => {}
-                    },
-                    AppState::SimilarImages => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.similar_selected > 0 { app.similar_selected -= 1; }
-                            app.similar_file_selected = 0;
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.similar_selected < app.similar_groups.len().saturating_sub(1) {
-                                app.similar_selected += 1;
-                            }
-                            app.similar_file_selected = 0;
-                        }
-                        KeyCode::Left | KeyCode::Char('h') => {
-                            if app.similar_file_selected > 0 { app.similar_file_selected -= 1; }
-                        }
-                        KeyCode::Right | KeyCode::Char('l') => {
-                            if let Some(group) = app.similar_groups.get(app.similar_selected) {
-                                if app.similar_file_selected < group.files.len().saturating_sub(1) {
-                                    app.similar_file_selected += 1;
-                                }
-                            }
-                        }
-                        KeyCode::Char('+') | KeyCode::Char('=') => {
-                            if app.similar_threshold < 64 { app.similar_threshold += 1; }
-                            app.scan_similar_images();
-                        }
-                        KeyCode::Char('-') => {
-                            if app.similar_threshold > 0 { app.similar_threshold -= 1; }
-                            app.scan_similar_images();
-                        }
-                        KeyCode::Char('s') => {
-                            app.scan_similar_images();
-                        }
-                        KeyCode::Char('d') => {
-                            // Delete non-selected files in current group
-                            if let Some(group) = app.similar_groups.get(app.similar_selected) {
-                                let keep = app.similar_file_selected;
-                                for (i, (path, _)) in group.files.iter().enumerate() {
-                                    if i != keep {
-                                        let _ = fs::remove_file(path);
+                            KeyCode::Enter => {
+                                let result = if app.export_format == 0 {
+                                    app.export_history_csv()
+                                } else {
+                                    app.export_history_json()
+                                };
+                                match result {
+                                    Ok(path) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push(format!("Exported to: {}", path));
+                                        }
+                                        app.state = AppState::Menu;
+                                    }
+                                    Err(e) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push(format!("Export failed: {}", e));
+                                        }
                                     }
                                 }
-                                app.scan_similar_images();
                             }
-                        }
-                        _ => {}
-                    },
-                    AppState::CommandPalette => match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            if app.palette_selected > 0 { app.palette_selected -= 1; }
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if app.palette_selected < app.palette_results.len().saturating_sub(1) {
-                                app.palette_selected += 1;
+                            _ => {}
+                        },
+                        AppState::ThemeEditor => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.theme_edit_selected > 0 { app.theme_edit_selected -= 1; }
                             }
-                        }
-                        KeyCode::Enter => {
-                            if let Some((_, idx)) = app.palette_results.get(app.palette_selected) {
-                                app.selected = *idx;
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.theme_edit_selected < 9 { app.theme_edit_selected += 1; }
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                app.theme_edit_field = app.theme_edit_field.saturating_sub(1);
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                if app.theme_edit_field < 2 { app.theme_edit_field += 1; }
+                            }
+                            KeyCode::Char('a') => {
+                                app.save_custom_theme(&format!("Theme_{}", app.custom_themes.len() + 1));
+                            }
+                            KeyCode::Enter => {
                                 app.state = AppState::Menu;
                             }
-                        }
-                        KeyCode::Char(c) => {
-                            app.palette_query.push(c);
-                            app.update_palette_results();
-                        }
-                        KeyCode::Backspace => {
-                            app.palette_query.pop();
-                            app.update_palette_results();
-                        }
-                        _ => {}
-                    },
-                }
+                            _ => {}
+                        },
+                        AppState::DashboardCustom => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Stats,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.dashboard_selected > 0 { app.dashboard_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.dashboard_selected < 3 { app.dashboard_selected += 1; }
+                            }
+                            KeyCode::Char(' ') => {
+                                match app.dashboard_selected {
+                                    0 => app.widget_layout.show_summary = !app.widget_layout.show_summary,
+                                    1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
+                                    2 => app.widget_layout.show_history = !app.widget_layout.show_history,
+                                    3 => app.widget_layout.show_compression = !app.widget_layout.show_compression,
+                                    _ => {}
+                                }
+                            }
+                            KeyCode::Enter => {
+                                let _ = fs::write(
+                                    ".io_tool_dashboard.json",
+                                    serde_json::to_string_pretty(&app.widget_layout).unwrap_or_default(),
+                                );
+                                app.state = AppState::Stats;
+                            }
+                            _ => {}
+                        },
+                        AppState::CompressionGraph => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.compress_scroll > 0 { app.compress_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.compress_scroll < app.compression_stats.len().saturating_sub(1) {
+                                    app.compress_scroll += 1;
+                                }
+                            }
+                            KeyCode::Char('r') => app.build_compression_stats(),
+                            _ => {}
+                        },
+                        AppState::FileClassify => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.classify_selected > 0 { app.classify_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.classify_selected < app.classify_rules.len().saturating_sub(1) {
+                                    app.classify_selected += 1;
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                app.classify_adding = true;
+                                app.classify_input.clear();
+                            }
+                            KeyCode::Char('d') => {
+                                if !app.classify_rules.is_empty() {
+                                    app.classify_rules.remove(app.classify_selected);
+                                    if app.classify_selected >= app.classify_rules.len() && app.classify_selected > 0 {
+                                        app.classify_selected -= 1;
+                                    }
+                                }
+                            }
+                            KeyCode::Enter if app.classify_adding => {
+                                let parts: Vec<&str> = app.classify_input.splitn(2, ':').collect();
+                                if parts.len() == 2 {
+                                    app.classify_rules.push((parts[0].trim().to_string(), parts[1].trim().to_string()));
+                                }
+                                app.classify_adding = false;
+                                app.classify_input.clear();
+                            }
+                            KeyCode::Char('r') => app.classify_files(),
+                            KeyCode::Char(c) if app.classify_adding => {
+                                app.classify_input.push(c);
+                            }
+                            KeyCode::Backspace if app.classify_adding => {
+                                app.classify_input.pop();
+                            }
+                            _ => {}
+                        },
+                        AppState::MetaEdit => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.meta_scroll > 0 { app.meta_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.meta_scroll < app.meta_files.len().saturating_sub(1) {
+                                    app.meta_scroll += 1;
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some((_, selected)) = app.meta_files.get_mut(app.meta_scroll) {
+                                    *selected = !*selected;
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                for (_, selected) in app.meta_files.iter_mut() {
+                                    *selected = true;
+                                }
+                            }
+                            KeyCode::Tab => {
+                                app.meta_field = (app.meta_field + 1) % 3;
+                            }
+                            KeyCode::Char('x') => {
+                                let count = app.meta_files.iter().filter(|(_, s)| *s).count();
+                                app.meta_files.retain(|(_, s)| !s);
+                                if let Ok(mut logs) = app.logs.lock() {
+                                    logs.push(format!("Removed metadata from {} files", count));
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::ConfigIO => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.config_io_selected > 0 { app.config_io_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.config_io_selected < 1 { app.config_io_selected += 1; }
+                            }
+                            KeyCode::Char('e') => {
+                                match app.export_config() {
+                                    Ok(path) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push(format!("Config exported to: {}", path));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push(format!("Export failed: {}", e));
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('i') => {
+                                app.config_io_adding = true;
+                                app.config_io_path.clear();
+                            }
+                            KeyCode::Enter if app.config_io_adding => {
+                                let path = app.config_io_path.clone();
+                                match app.import_config(&path) {
+                                    Ok(()) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push("Config imported successfully".into());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if let Ok(mut logs) = app.logs.lock() {
+                                            logs.push(format!("Import failed: {}", e));
+                                        }
+                                    }
+                                }
+                                app.config_io_adding = false;
+                                app.config_io_path.clear();
+                            }
+                            KeyCode::Char(c) if app.config_io_adding => {
+                                app.config_io_path.push(c);
+                            }
+                            KeyCode::Backspace if app.config_io_adding => {
+                                app.config_io_path.pop();
+                            }
+                            _ => {}
+                        },
+                        AppState::Plugins => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.plugin_selected > 0 { app.plugin_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.plugin_selected < app.plugins.len().saturating_sub(1) {
+                                    app.plugin_selected += 1;
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some(plugin) = app.plugins.get_mut(app.plugin_selected) {
+                                    plugin.enabled = !plugin.enabled;
+                                }
+                            }
+                            KeyCode::Char('r') => app.scan_plugins(),
+                            KeyCode::Char('o') => {
+                                if let Err(e) = std::process::Command::new("explorer").arg(&app.plugin_dir).spawn() {
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Failed to open: {}", e));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::StatusbarCustom => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.statusbar_selected > 0 { app.statusbar_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.statusbar_selected < app.statusbar_items.len().saturating_sub(1) {
+                                    app.statusbar_selected += 1;
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                if let Some((_, enabled)) = app.statusbar_items.get_mut(app.statusbar_selected) {
+                                    *enabled = !*enabled;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                app.save_statusbar_config();
+                                app.state = AppState::Menu;
+                            }
+                            _ => {}
+                        },
+                        // Batch 3 event handlers
+                        AppState::ImagePreview => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if let Some(ref mut p) = app.image_preview {
+                                    if p.height > 0 { p.height -= 1; }
+                                }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if let Some(ref mut p) = app.image_preview {
+                                    p.height += 1;
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::SplitPane => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.split_mode = false;
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.split_left_scroll > 0 { app.split_left_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.split_left_scroll += 1;
+                            }
+                            KeyCode::Tab => {
+                                app.split_mode = !app.split_mode;
+                            }
+                            _ => {}
+                        },
+                        AppState::QuickActions => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.quick_selected > 0 { app.quick_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.quick_selected < app.quick_actions.len().saturating_sub(1) {
+                                    app.quick_selected += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some((_, idx)) = app.quick_actions.get(app.quick_selected) {
+                                    let menu_items = MenuItem::all();
+                                    if *idx < menu_items.len() {
+                                        let item = menu_items[*idx];
+                                        match item {
+                                            MenuItem::FullProcess => app.state = AppState::StepSelect,
+                                            MenuItem::Settings => app.state = AppState::Settings,
+                                            MenuItem::Statistics => app.state = AppState::Stats,
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::RecentFiles => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.recent_scroll > 0 { app.recent_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.recent_scroll += 1;
+                            }
+                            _ => {}
+                        },
+                        AppState::TagSystem => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.tag_adding = false;
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.tag_selected > 0 { app.tag_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.tag_selected < app.file_tags.len().saturating_sub(1) {
+                                    app.tag_selected += 1;
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                app.tag_adding = true;
+                                app.tag_input.clear();
+                            }
+                            KeyCode::Enter if app.tag_adding => {
+                                if !app.tag_input.is_empty() {
+                                    app.add_file_tag("*".into(), app.tag_input.clone());
+                                    app.tag_input.clear();
+                                    app.tag_adding = false;
+                                }
+                            }
+                            KeyCode::Backspace if app.tag_adding => {
+                                app.tag_input.pop();
+                            }
+                            KeyCode::Char(c) if app.tag_adding => {
+                                app.tag_input.push(c);
+                            }
+                            _ => {}
+                        },
+                        AppState::SideBySideDiff => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.diff_scroll > 0 { app.diff_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.diff_scroll += 1;
+                            }
+                            _ => {}
+                        },
+                        AppState::FileTreeView => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.tree_selected > 0 { app.tree_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.tree_selected += 1;
+                            }
+                            KeyCode::Enter => {
+                                // Toggle expand/collapse
+                                fn toggle_node(nodes: &mut [FileTreeNode], idx: usize, counter: &mut usize) {
+                                    for node in nodes.iter_mut() {
+                                        if *counter == idx {
+                                            node.expanded = !node.expanded;
+                                            return;
+                                        }
+                                        *counter += 1;
+                                        if node.expanded {
+                                            toggle_node(&mut node.children, idx, counter);
+                                        }
+                                    }
+                                }
+                                let mut counter = 0;
+                                toggle_node(&mut app.file_tree, app.tree_selected, &mut counter);
+                            }
+                            _ => {}
+                        },
+                        AppState::RenamePattern => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.rename_field = 0;
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Tab => {
+                                app.rename_field = (app.rename_field + 1) % 2;
+                            }
+                            KeyCode::Char('a') => {
+                                app.rename_patterns.push(RenamePattern {
+                                    pattern: String::new(),
+                                    replacement: String::new(),
+                                    preview: Vec::new(),
+                                    use_regex: false,
+                                });
+                                app.rename_selected = app.rename_patterns.len() - 1;
+                            }
+                            KeyCode::Char('r') => {
+                                if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
+                                    p.use_regex = !p.use_regex;
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                app.preview_rename_pattern();
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.rename_selected > 0 { app.rename_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.rename_selected < app.rename_patterns.len().saturating_sub(1) {
+                                    app.rename_selected += 1;
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
+                                    if app.rename_field == 0 { p.pattern.pop(); } else { p.replacement.pop(); }
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
+                                    if app.rename_field == 0 { p.pattern.push(c); } else { p.replacement.push(c); }
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::Timeline => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.timeline_scroll > 0 { app.timeline_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.timeline_scroll += 1;
+                            }
+                            _ => {}
+                        },
+                        AppState::NotificationCenter => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.notif_scroll > 0 { app.notif_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.notif_scroll += 1;
+                            }
+                            KeyCode::Char('c') => {
+                                app.notifications.clear();
+                                app.notif_scroll = 0;
+                            }
+                            KeyCode::Enter => {
+                                if let Some(n) = app.notifications.get_mut(app.notif_scroll) {
+                                    n.read = true;
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::ExportReport => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                app.report_format = 0;
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                app.report_format = 1;
+                            }
+                            KeyCode::Enter => {
+                                match app.export_report() {
+                                    Ok(path) => {
+                                        app.add_notification(format!("Report exported to {}", path), "success".into());
+                                        app.state = AppState::Menu;
+                                    }
+                                    Err(e) => {
+                                        app.add_notification(format!("Export failed: {}", e), "error".into());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::SimilarImages => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.similar_selected > 0 { app.similar_selected -= 1; }
+                                app.similar_file_selected = 0;
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.similar_selected < app.similar_groups.len().saturating_sub(1) {
+                                    app.similar_selected += 1;
+                                }
+                                app.similar_file_selected = 0;
+                            }
+                            KeyCode::Left | KeyCode::Char('h') => {
+                                if app.similar_file_selected > 0 { app.similar_file_selected -= 1; }
+                            }
+                            KeyCode::Right | KeyCode::Char('l') => {
+                                if let Some(group) = app.similar_groups.get(app.similar_selected) {
+                                    if app.similar_file_selected < group.files.len().saturating_sub(1) {
+                                        app.similar_file_selected += 1;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('+') | KeyCode::Char('=') => {
+                                if app.similar_threshold < 64 { app.similar_threshold += 1; }
+                                app.scan_similar_images();
+                            }
+                            KeyCode::Char('-') => {
+                                if app.similar_threshold > 0 { app.similar_threshold -= 1; }
+                                app.scan_similar_images();
+                            }
+                            KeyCode::Char('s') => {
+                                app.scan_similar_images();
+                            }
+                            KeyCode::Char('d') => {
+                                // Delete non-selected files in current group
+                                if let Some(group) = app.similar_groups.get(app.similar_selected) {
+                                    let keep = app.similar_file_selected;
+                                    for (i, (path, _)) in group.files.iter().enumerate() {
+                                        if i != keep {
+                                            let _ = fs::remove_file(path);
+                                        }
+                                    }
+                                    app.scan_similar_images();
+                                }
+                            }
+                            _ => {}
+                        },
+                        AppState::RenamePreview => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.rename_preview_scroll > 0 { app.rename_preview_scroll -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.rename_preview_scroll < app.rename_preview_items.len().saturating_sub(1) {
+                                    app.rename_preview_scroll += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                app.state = AppState::Menu;
+                            }
+                            _ => {}
+                        },
+                        AppState::FolderSync => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                app.folder_sync_watching = false;
+                                app.state = AppState::Menu;
+                            }
+                            KeyCode::Char('s') => {
+                                // Set source path from config
+                                app.folder_sync_source = app.config.twitter_src.clone();
+                                app.folder_sync_log.push(format!("[{}] Source: {}", chrono::Local::now().format("%H:%M:%S"), app.folder_sync_source));
+                            }
+                            KeyCode::Char('d') => {
+                                // Set dest path from config
+                                app.folder_sync_dest = app.config.dest.clone();
+                                app.folder_sync_log.push(format!("[{}] Dest: {}", chrono::Local::now().format("%H:%M:%S"), app.folder_sync_dest));
+                            }
+                            KeyCode::Char('r') => {
+                                // Run sync now
+                                if !app.folder_sync_source.is_empty() && !app.folder_sync_dest.is_empty() {
+                                    let src = std::path::PathBuf::from(&app.folder_sync_source);
+                                    let dst = std::path::PathBuf::from(&app.folder_sync_dest);
+                                    if src.exists() {
+                                        let _ = std::fs::create_dir_all(&dst);
+                                        let mut copied = 0u32;
+                                        if let Ok(entries) = std::fs::read_dir(&src) {
+                                            for entry in entries.flatten() {
+                                                let from = entry.path();
+                                                let to = dst.join(from.file_name().unwrap_or_default());
+                                                if from.is_file() && !to.exists() {
+                                                    if std::fs::copy(&from, &to).is_ok() {
+                                                        copied += 1;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        app.folder_sync_log.push(format!("[{}] Synced {} files", chrono::Local::now().format("%H:%M:%S"), copied));
+                                    }
+                                }
+                            }
+                            KeyCode::Char('w') => {
+                                // Toggle watch mode
+                                app.folder_sync_watching = !app.folder_sync_watching;
+                                let status = if app.folder_sync_watching { "ON" } else { "OFF" };
+                                app.folder_sync_log.push(format!("[{}] Watch: {}", chrono::Local::now().format("%H:%M:%S"), status));
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                // scroll log
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                // scroll log
+                            }
+                            _ => {}
+                        },
+                        AppState::KeybindCustom => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                if app.keybind_editing {
+                                    app.keybind_editing = false;
+                                    app.keybind_input.clear();
+                                } else {
+                                    app.state = AppState::Menu;
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.keybind_selected > 0 { app.keybind_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.keybind_selected < 13 { app.keybind_selected += 1; }
+                            }
+                            KeyCode::Enter => {
+                                if app.keybind_editing {
+                                    // Save the new keybinding
+                                    let new_key = app.keybind_input.clone();
+                                    match app.keybind_selected {
+                                        0 => app.config.keybindings.quit = new_key,
+                                        1 => app.config.keybindings.theme = new_key,
+                                        2 => app.config.keybindings.dry_run = new_key,
+                                        3 => app.config.keybindings.undo = new_key,
+                                        4 => app.config.keybindings.help = new_key,
+                                        5 => app.config.keybindings.filter = new_key,
+                                        6 => app.config.keybindings.sort = new_key,
+                                        7 => app.config.keybindings.profile = new_key,
+                                        8 => app.config.keybindings.batch = new_key,
+                                        9 => app.config.keybindings.export_log = new_key,
+                                        10 => app.config.keybindings.pause = new_key,
+                                        11 => app.config.keybindings.info = new_key,
+                                        12 => app.config.keybindings.stats = new_key,
+                                        13 => app.config.keybindings.watch = new_key,
+                                        _ => {}
+                                    }
+                                    app.keybind_editing = false;
+                                    app.keybind_input.clear();
+                                } else {
+                                    app.keybind_editing = true;
+                                    app.keybind_input.clear();
+                                }
+                            }
+                            KeyCode::Char(c) if app.keybind_editing => {
+                                app.keybind_input.push(c);
+                            }
+                            KeyCode::Backspace if app.keybind_editing => {
+                                app.keybind_input.pop();
+                            }
+                            _ => {}
+                        },
+                        AppState::CommandPalette => match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if app.palette_selected > 0 { app.palette_selected -= 1; }
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.palette_selected < app.palette_results.len().saturating_sub(1) {
+                                    app.palette_selected += 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some((_, idx)) = app.palette_results.get(app.palette_selected) {
+                                    app.selected = *idx;
+                                    app.state = AppState::Menu;
+                                }
+                            }
+                            KeyCode::Char(c) => {
+                                app.palette_query.push(c);
+                                app.update_palette_results();
+                            }
+                            KeyCode::Backspace => {
+                                app.palette_query.pop();
+                                app.update_palette_results();
+                            }
+                            _ => {}
+                        },
+                    }
 
-                // Handle search mode
-                if app.search_mode {
-                    match key.code {
-                        KeyCode::Esc => {
-                            app.search_mode = false;
-                            app.search_query.clear();
-                            app.filtered_log_indices.clear();
+                    // Handle search mode
+                    if app.search_mode {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.search_mode = false;
+                                app.search_query.clear();
+                                app.filtered_log_indices.clear();
+                            }
+                            KeyCode::Enter => {
+                                app.search_mode = false;
+                                app.update_log_filter();
+                            }
+                            KeyCode::Backspace => {
+                                app.search_query.pop();
+                                app.update_log_filter();
+                            }
+                            KeyCode::Char(c) => {
+                                app.search_query.push(c);
+                                app.update_log_filter();
+                            }
+                            _ => {}
                         }
-                        KeyCode::Enter => {
-                            app.search_mode = false;
-                            app.update_log_filter();
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    match mouse.kind {
+                        crossterm::event::MouseEventKind::ScrollUp => {
+                            if app.selected > 0 { app.selected -= 1; }
                         }
-                        KeyCode::Backspace => {
-                            app.search_query.pop();
-                            app.update_log_filter();
+                        crossterm::event::MouseEventKind::ScrollDown => {
+                            if app.selected < app.menu_items.len().saturating_sub(1) {
+                                app.selected += 1;
+                            }
                         }
-                        KeyCode::Char(c) => {
-                            app.search_query.push(c);
-                            app.update_log_filter();
+                        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                            let row = mouse.row as usize;
+                            if row >= 3 && row < app.menu_items.len() + 3 {
+                                app.selected = row - 3;
+                            }
                         }
                         _ => {}
                     }
                 }
+                _ => {}
             }
         }
 
@@ -4454,6 +4927,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Header
     let header_text = match app.state {
+        AppState::Splash => "  pixpipe".to_string(),
         AppState::Menu => {
             let dry = if app.dry_run { " [DRY RUN]" } else { "" };
             let pause = if *app.is_paused.lock().unwrap() { " [PAUSED]" } else { "" };
@@ -4505,6 +4979,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::CommandPalette => "  Command Palette".to_string(),
         AppState::NotificationCenter => "  Notification Center".to_string(),
         AppState::ExportReport => "  Export Report".to_string(),
+        AppState::RenamePreview => "  Rename Preview".to_string(),
+        AppState::FolderSync => "  Folder Sync/Backup".to_string(),
+        AppState::KeybindCustom => "  Keybind Customization".to_string(),
         AppState::SimilarImages => "  Similar Image Search".to_string(),
     };
     let header = Paragraph::new(header_text)
@@ -4514,6 +4991,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Main content
     match app.state {
+        AppState::Splash => render_splash(f, app, chunks[1]),
         AppState::Menu => render_menu(f, app, chunks[1]),
         AppState::StepSelect => render_step_select(f, app, chunks[1]),
         AppState::Preview => render_preview(f, app, chunks[1]),
@@ -4556,6 +5034,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::CommandPalette => render_command_palette(f, app, chunks[1]),
         AppState::NotificationCenter => render_notification_center(f, app, chunks[1]),
         AppState::ExportReport => render_export_report(f, app, chunks[1]),
+        AppState::RenamePreview => render_rename_preview(f, app, chunks[1]),
+        AppState::FolderSync => render_folder_sync(f, app, chunks[1]),
+        AppState::KeybindCustom => render_keybind_custom(f, app, chunks[1]),
     }
 
     // Status bar (keybinds + info)
@@ -4568,10 +5049,11 @@ fn ui(f: &mut Frame, app: &mut App) {
 fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let footer_text = match app.state {
+        AppState::Splash => "",
         AppState::Menu => "j/k: Nav │ 1-9: Select │ Enter: Run │ t:Theme │ d:DryRun │ u:Undo │ ?:Help │ q:Quit",
         AppState::StepSelect => "j/k: Nav │ Space: Toggle │ a: All │ Enter: Confirm │ Esc: Back",
         AppState::Preview => "j/k: Scroll │ PgUp/PgDn │ Home/End │ i:Info │ Enter: Start │ Esc: Back",
-        AppState::Processing => "Processing... │ Ctrl+P: Pause │ /: Search log",
+        AppState::Processing => "Processing... │ Ctrl+P: Pause │ Esc: Interrupt │ /: Search log",
         AppState::Done => "r: Menu │ /: Search │ u: Undo │ Ctrl+E: Export │ q: Quit",
         AppState::Settings => "j/k: Nav │ Enter: Save │ Esc: Back",
         AppState::Help => "j/k: Scroll │ PgUp/PgDn │ Esc/?: Close",
@@ -4610,6 +5092,9 @@ fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         AppState::NotificationCenter => "j/k: Nav │ r: Read │ Esc: Back",
         AppState::ExportReport => "←→: Format │ Enter: Export │ Esc: Back",
         AppState::SimilarImages => "j/k: Group │ h/l: File │ +/-: Threshold │ s: Scan │ d: Delete │ Esc: Back",
+        AppState::RenamePreview => "j/k: Scroll │ Enter: Confirm │ Esc: Cancel",
+        AppState::FolderSync => "s: Source │ d: Dest │ r: Sync │ w: Watch │ Esc: Back",
+        AppState::KeybindCustom => "j/k: Select │ Enter: Edit │ Esc: Back",
     };
     let footer = Paragraph::new(footer_text)
         .style(Style::default().fg(theme.muted))
@@ -4642,6 +5127,62 @@ fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(bar, area);
 }
 
+fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
+    let theme = app.theme();
+    let elapsed = app.splash_start.elapsed();
+    let remaining = if elapsed < app.splash_duration {
+        app.splash_duration - elapsed
+    } else {
+        Duration::ZERO
+    };
+
+    let logo = vec![
+        "╔════════════════════════════════════════════════════════════╗",
+        "║                                                            ║",
+        "║             ██████╗ ██╗██╗  ██╗██████╗ ██╗███╗   ██╗███████╗║",
+        "║             ██╔══██╗██║╚██╗██╔╝██╔══██╗██║████╗  ██║██╔════╝║",
+        "║             ██████╔╝██║ ╚███╔╝ ██████╔╝██║██╔██╗ ██║█████╗  ║",
+        "║             ██╔═══╝ ██║ ██╔██╗ ██╔═══╝ ██║██║╚██╗██║██╔══╝  ║",
+        "║             ██║     ██║██╔╝ ██╗██║     ██║██║ ╚████║███████╗║",
+        "║             ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═══╝╚══════╝║",
+        "║                                                            ║",
+        "║                    Image Processing Tool                    ║",
+        "║                                                            ║",
+        "╚════════════════════════════════════════════════════════════╝",
+    ];
+
+    let version = format!("v{} | Rust TUI Application", env!("CARGO_PKG_VERSION"));
+    let hint = "Press any key to continue...";
+
+    let mut lines: Vec<Line> = logo.iter().map(|l| {
+        Line::from(Span::styled(*l, Style::default().fg(theme.accent)))
+    }).collect();
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(version, Style::default().fg(theme.muted))));
+    lines.push(Line::from(""));
+    if remaining > Duration::ZERO {
+        let secs = remaining.as_secs_f64().ceil() as u64;
+        lines.push(Line::from(Span::styled(
+            format!("Starting in {}s...", secs),
+            Style::default().fg(theme.muted),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(hint, Style::default().fg(theme.accent))));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Welcome")
+        .border_style(Style::default().fg(theme.accent));
+
+    let paragraph = Paragraph::new(lines)
+        .block(block)
+        .alignment(ratatui::layout::Alignment::Center);
+
+    f.render_widget(paragraph, area);
+}
+
 fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
@@ -4656,7 +5197,7 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
         .enumerate()
         .map(|(i, item)| {
             let prefix = if i == app.selected { "▶ " } else { "  " };
-            let num = format!("[{}] ", i + 1);
+            let num = format!("[{:02}] ", i + 1);
             let style = if i == app.selected {
                 Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
             } else {
@@ -5090,74 +5631,96 @@ fn render_help(f: &mut Frame, app: &mut App, area: Rect) {
         "  io-tool — Key Bindings Reference",
         "═══════════════════════════════════════════════════════════",
         "",
-        "  Global Keys (work in most screens):",
+        "  グローバルキー (Global Keys):",
         "  ─────────────────────────────────────",
-        "    t         Cycle theme (6 colors)",
-        "    d         Toggle dry run mode",
-        "    u         Undo last rename",
-        "    ?         Show this help screen",
-        "    Ctrl+P    Pause/Resume processing",
-        "    Ctrl+E    Export log to file",
+        "    t         テーマ切替 (Cycle theme)",
+        "    d         ドライラン切替 (Toggle dry run)",
+        "    u         直近のリネームを元に戻す (Undo)",
+        "    ?         ヘルプ表示 (Show help)",
+        "    Ctrl+P    処理の一時停止/再開 (Pause/Resume)",
+        "    Ctrl+E    ログをファイルに出力 (Export log)",
         "",
-        "  Menu Navigation:",
+        "  メニュー操作 (Menu Navigation):",
         "  ─────────────────────────────────────",
-        "    j/k       Navigate up/down",
-        "    1-9       Quick select menu item",
-        "    Enter     Run selected item",
-        "    q/Esc     Quit",
+        "    j/k       上下移動 (Navigate up/down)",
+        "    1-9, 01+  クイック選択 (Quick select)",
+        "    Enter     実行 (Run selected)",
+        "    q/Esc     終了 (Quit)",
         "",
-        "  Full Process:",
+        "  フルプロセス (Full Process):",
         "  ─────────────────────────────────────",
-        "    Space     Toggle step on/off",
-        "    a         Toggle all steps",
-        "    Enter     Preview & confirm",
+        "    Space     ステップON/OFF切替",
+        "    a         全ステップ切替",
+        "    Enter     プレビュー&確認",
         "",
-        "  Preview:",
+        "  プレビュー (Preview):",
         "  ─────────────────────────────────────",
-        "    j/k       Scroll one line",
-        "    PgUp/Dn   Scroll page",
-        "    Home/End  Jump to start/end",
-        "    i         Show file info panel",
-        "    Enter     Start processing",
+        "    j/k       1行スクロール",
+        "    PgUp/Dn   ページスクロール",
+        "    Home/End  先頭/末尾へ移動",
+        "    i         ファイル情報パネル",
+        "    Enter     処理開始",
         "",
-        "  Processing:",
+        "  処理中 (Processing):",
         "  ─────────────────────────────────────",
-        "    Ctrl+P    Pause/Resume",
-        "    /         Search log",
+        "    Ctrl+P    一時停止/再開",
+        "    /         ログ検索",
         "",
-        "  Done Screen:",
+        "  完了画面 (Done Screen):",
         "  ─────────────────────────────────────",
-        "    r         Back to menu",
-        "    /         Search log",
-        "    Ctrl+E    Export log",
+        "    r         メニューへ戻る",
+        "    /         ログ検索",
+        "    Ctrl+E    ログ出力",
         "",
-        "  Menu Features:",
+        "  メニュー機能 (Menu Features):",
         "  ─────────────────────────────────────",
-        "    f         Filter & Sort settings",
-        "    s         Quick cycle sort order",
-        "    S         Statistics dashboard",
-        "    p         Config profiles",
-        "    b         Batch queue",
-        "    w         Watch mode",
+        "    f         フィルタ&ソート設定",
+        "    s         ソート順クイック切替",
+        "    S         統計ダッシュボード",
+        "    p         設定プロファイル",
+        "    b         バッチキュー",
+        "    w         ウォッチモード",
         "",
-        "  Duplicate Groups:",
+        "  重複ファイル (Duplicate Groups):",
         "  ─────────────────────────────────────",
-        "    j/k       Select group",
-        "    h/l       Select file in group",
-        "    Space     Mark as keep",
-        "    x         Delete non-selected",
+        "    j/k       グループ選択",
+        "    h/l       グループ内ファイル選択",
+        "    Space     保持マーク",
+        "    x         選択以外を削除",
         "",
-        "  JXL Settings:",
+        "  JXL設定 (JXL Settings):",
         "  ─────────────────────────────────────",
-        "    h/l       Adjust quality (-5/+5)",
-        "    Space     Toggle lossless",
-        "    Enter     Save settings",
+        "    h/l       品質調整 (-5/+5)",
+        "    Space     ロスレス切替",
+        "    Enter     設定保存",
         "",
-        "  Watch Mode:",
+        "  ウォッチモード (Watch Mode):",
         "  ─────────────────────────────────────",
-        "    w         Toggle watch on/off",
-        "    a         Add watch directory",
-        "    Enter     Confirm add",
+        "    w         ウォッチON/OFF",
+        "    a         監視ディレクトリ追加",
+        "    Enter     追加確認",
+        "",
+        "  類似画像検索 (Similar Images):",
+        "  ─────────────────────────────────────",
+        "    j/k       グループ選択",
+        "    h/l       ファイル選択",
+        "    +/-       類似度閾値調整",
+        "    d         選択ファイル削除",
+        "    Esc       メニューへ戻る",
+        "",
+        "  コマンドパレット (Command Palette):",
+        "  ─────────────────────────────────────",
+        "    /         コマンド検索",
+        "    j/k       結果ナビゲート",
+        "    Enter     コマンド実行",
+        "    Esc       閉じる",
+        "",
+        "  ファジーファインダー (Fuzzy Finder):",
+        "  ─────────────────────────────────────",
+        "    /         ファイル名検索",
+        "    j/k       結果ナビゲート",
+        "    Enter     ファイル選択",
+        "    Esc       閉じる",
     ];
 
     let start = app.help_scroll.min(help_lines.len().saturating_sub(1));
@@ -6307,6 +6870,55 @@ fn calculate_sha256(path: &PathBuf) -> Result<String, Box<dyn std::error::Error>
 }
 
 // ============================================================
+// EXIF Metadata Parsing
+// ============================================================
+
+fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut bufreader = std::io::BufReader::new(file);
+    let exif = exif::Reader::new().read_from_container(&mut bufreader).ok()?;
+
+    let mut entries = Vec::new();
+
+    // Key EXIF fields
+    let fields = [
+        (exif::Tag::Make, "Camera Make"),
+        (exif::Tag::Model, "Camera Model"),
+        (exif::Tag::DateTimeOriginal, "Date Taken"),
+        (exif::Tag::ExposureTime, "Shutter Speed"),
+        (exif::Tag::FNumber, "Aperture"),
+        (exif::Tag::PhotographicSensitivity, "ISO"),
+        (exif::Tag::FocalLength, "Focal Length"),
+        (exif::Tag::ImageWidth, "Width"),
+        (exif::Tag::ImageLength, "Height"),
+        (exif::Tag::Orientation, "Orientation"),
+        (exif::Tag::Software, "Software"),
+        (exif::Tag::Artist, "Artist"),
+        (exif::Tag::ImageDescription, "Description"),
+    ];
+
+    for (tag, label) in &fields {
+        if let Some(field) = exif.get_field(*tag, exif::In::PRIMARY) {
+            let value = field.display_value().to_string();
+            if !value.is_empty() {
+                entries.push((label.to_string(), value));
+            }
+        }
+    }
+
+    // GPS info
+    if let Some(lat_field) = exif.get_field(exif::Tag::GPSLatitude, exif::In::PRIMARY) {
+        if let Some(lon_field) = exif.get_field(exif::Tag::GPSLongitude, exif::In::PRIMARY) {
+            let lat = lat_field.display_value().to_string();
+            let lon = lon_field.display_value().to_string();
+            entries.push(("GPS".to_string(), format!("{}, {}", lat, lon)));
+        }
+    }
+
+    if entries.is_empty() { None } else { Some(entries) }
+}
+
+// ============================================================
 // Perceptual Hash (Similar Image Detection)
 // ============================================================
 
@@ -6461,7 +7073,92 @@ fn convert_to_jxl(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // ============================================================
-// Batch 3: Render Functions
+// Image Resize
+// ============================================================
+
+fn resize_images(dest: &str, max_w: u32, max_h: u32, log: &dyn Fn(String)) -> usize {
+    let mut count = 0;
+    let entries: Vec<_> = fs::read_dir(dest)
+        .ok()
+        .map(|d| d.flatten().filter(|e| {
+            let p = e.path();
+            p.is_file() && {
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string().to_lowercase();
+                ["jpg", "jpeg", "png", "bmp", "webp", "tiff"].contains(&ext.as_str())
+            }
+        }).collect())
+        .unwrap_or_default();
+
+    for entry in entries {
+        let path = entry.path();
+        if let Ok(img) = image::open(&path) {
+            let (w, h) = img.dimensions();
+            if w > max_w || h > max_h {
+                let ratio = (max_w as f64 / w as f64).min(max_h as f64 / h as f64);
+                let new_w = (w as f64 * ratio) as u32;
+                let new_h = (h as f64 * ratio) as u32;
+                let resized = img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3);
+                if let Err(e) = resized.save(&path) {
+                    log(format!("  Resize error {}: {}", path.display(), e));
+                } else {
+                    log(format!("  Resized: {} ({}x{} -> {}x{})", path.display(), w, h, new_w, new_h));
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
+}
+
+// ============================================================
+// Watermark Overlay
+// ============================================================
+
+fn add_watermark(dest: &str, text: &str, log: &dyn Fn(String)) -> usize {
+    use image::{Rgba, RgbaImage};
+
+    let mut count = 0;
+    let entries: Vec<_> = fs::read_dir(dest)
+        .ok()
+        .map(|d| d.flatten().filter(|e| {
+            let p = e.path();
+            p.is_file() && {
+                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string().to_lowercase();
+                ["jpg", "jpeg", "png", "bmp", "webp"].contains(&ext.as_str())
+            }
+        }).collect())
+        .unwrap_or_default();
+
+    for entry in entries {
+        let path = entry.path();
+        if let Ok(img) = image::open(&path) {
+            let mut rgba: RgbaImage = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            // Draw semi-transparent watermark bar at bottom
+            let bar_height = 20u32.min(h / 10);
+            let bar_y = h - bar_height;
+            let wm_color = Rgba([0u8, 0, 0, 100]);
+            for y in bar_y..h {
+                for x in 0..w {
+                    let pixel = rgba.get_pixel_mut(x, y);
+                    // Alpha blend
+                    let alpha = wm_color[3] as f64 / 255.0;
+                    pixel[0] = (pixel[0] as f64 * (1.0 - alpha) + wm_color[0] as f64 * alpha) as u8;
+                    pixel[1] = (pixel[1] as f64 * (1.0 - alpha) + wm_color[1] as f64 * alpha) as u8;
+                    pixel[2] = (pixel[2] as f64 * (1.0 - alpha) + wm_color[2] as f64 * alpha) as u8;
+                }
+            }
+            if let Err(e) = rgba.save(&path) {
+                log(format!("  Watermark error {}: {}", path.display(), e));
+            } else {
+                log(format!("  Watermarked: {} (bar overlay)", path.display()));
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 // ============================================================
 
 fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
@@ -6554,9 +7251,9 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Right pane - dest dir
     let right_items: Vec<ListItem> = app.duplicate_groups.iter().flat_map(|g| g.files.iter()).map(|df| {
-        let fname = std::path::Path::new(&df.path).file_name()
+        let fname = std::path::Path::new(&df.0).file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| df.path.clone());
+            .unwrap_or_else(|| df.0.clone());
         ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
     }).collect();
     let right_list = List::new(right_items)
@@ -7120,5 +7817,326 @@ fn hash_cache_db() {
     match status {
         Ok(_) => {}
         Err(e) => eprintln!("Error: {}", e),
+    }
+}
+
+// ============================================================
+// Rename Preview
+// ============================================================
+
+fn render_rename_preview(f: &mut Frame, app: &mut App, area: Rect) {
+    let theme = app.theme();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(area);
+
+    let count = app.rename_preview_items.len();
+    let header = Paragraph::new(format!("  {} files will be renamed", count))
+        .style(Style::default().fg(theme.warning).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::ALL).title("Rename Preview"));
+    f.render_widget(header, chunks[0]);
+
+    let visible_height = chunks[1].height.saturating_sub(2) as usize;
+    let start = if app.rename_preview_scroll >= visible_height { app.rename_preview_scroll - visible_height + 1 } else { 0 };
+    let end = (start + visible_height).min(count);
+
+    let items: Vec<ListItem> = app.rename_preview_items[start..end].iter()
+        .map(|(old, new)| {
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
+                Span::styled("→ ", Style::default().fg(theme.muted)),
+                Span::styled(new.clone(), Style::default().fg(Color::Green)),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Before → After"));
+    f.render_widget(list, chunks[1]);
+}
+
+fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
+    let theme = app.theme();
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    // Source
+    let src = if app.folder_sync_source.is_empty() { "(not set - press 's')".to_string() } else { app.folder_sync_source.clone() };
+    let src_block = Paragraph::new(format!("  📁 {}", src))
+        .style(Style::default().fg(theme.fg))
+        .block(Block::default().borders(Borders::ALL).title("Source (s)"));
+    f.render_widget(src_block, chunks[0]);
+
+    // Dest
+    let dst = if app.folder_sync_dest.is_empty() { "(not set - press 'd')".to_string() } else { app.folder_sync_dest.clone() };
+    let dst_block = Paragraph::new(format!("  📁 {}", dst))
+        .style(Style::default().fg(theme.fg))
+        .block(Block::default().borders(Borders::ALL).title("Destination (d)"));
+    f.render_widget(dst_block, chunks[1]);
+
+    // Status
+    let watch_status = if app.folder_sync_watching { "🟢 Watching" } else { "⚪ Stopped" };
+    let status_block = Paragraph::new(format!("  {} │ r: Sync now │ w: Toggle watch", watch_status))
+        .style(Style::default().fg(theme.accent))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
+    f.render_widget(status_block, chunks[2]);
+
+    // Log
+    let log_items: Vec<ListItem> = app.folder_sync_log.iter().rev().take(50)
+        .map(|line| ListItem::new(Line::from(Span::styled(format!("  {}", line), Style::default().fg(theme.muted)))))
+        .collect();
+    let log_block = List::new(log_items)
+        .block(Block::default().borders(Borders::ALL).title("Sync Log"));
+    f.render_widget(log_block, chunks[3]);
+}
+
+fn render_keybind_custom(f: &mut Frame, app: &mut App, area: Rect) {
+    let theme = app.theme();
+
+    let bindings = vec![
+        ("Quit", &app.config.keybindings.quit),
+        ("Theme", &app.config.keybindings.theme),
+        ("Dry Run", &app.config.keybindings.dry_run),
+        ("Undo", &app.config.keybindings.undo),
+        ("Help", &app.config.keybindings.help),
+        ("Filter", &app.config.keybindings.filter),
+        ("Sort", &app.config.keybindings.sort),
+        ("Profile", &app.config.keybindings.profile),
+        ("Batch", &app.config.keybindings.batch),
+        ("Export Log", &app.config.keybindings.export_log),
+        ("Pause", &app.config.keybindings.pause),
+        ("Info", &app.config.keybindings.info),
+        ("Stats", &app.config.keybindings.stats),
+        ("Watch", &app.config.keybindings.watch),
+    ];
+
+    let items: Vec<ListItem> = bindings.iter().enumerate()
+        .map(|(i, (name, key))| {
+            let style = if i == app.keybind_selected {
+                Style::default().fg(theme.bg).bg(theme.primary)
+            } else {
+                Style::default().fg(theme.fg)
+            };
+            let value = if app.keybind_editing && i == app.keybind_selected {
+                format!("{} ▸ {}▌", name, app.keybind_input)
+            } else {
+                format!("{}: [{}]", name, key)
+            };
+            ListItem::new(Line::from(Span::styled(format!("  {}", value), style)))
+        })
+        .collect();
+
+    let block = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title("Keybindings (Enter to edit, Esc to cancel)"));
+    f.render_widget(block, area);
+}
+
+// ============================================================
+// Auto-update check
+// ============================================================
+
+const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const GITHUB_REPO: &str = "HHKK0127/PixPipe";
+
+#[derive(serde::Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    html_url: String,
+    body: Option<String>,
+}
+
+fn check_for_updates() -> Option<String> {
+    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
+    
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("pixpipe")
+        .build()
+        .ok()?;
+    
+    let resp = client.get(&url).send().ok()?;
+    let release: GitHubRelease = resp.json().ok()?;
+    
+    let latest = release.tag_name.trim_start_matches('v');
+    let current = CURRENT_VERSION;
+    
+    if latest != current {
+        Some(format!(
+            "New version available: v{} (current: v{})\nDownload: {}",
+            latest, current, release.html_url
+        ))
+    } else {
+        None
+    }
+}
+
+// ============================================================
+// Unit Tests
+// ============================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert!(!config.dest.is_empty());
+        assert!(!config.image_extensions.is_empty());
+        assert!(config.jxl_quality > 0);
+    }
+
+    #[test]
+    fn test_config_save_load() {
+        let config = Config::default();
+        let _ = config.save();
+        let loaded = Config::load();
+        assert_eq!(config.dest, loaded.dest);
+    }
+
+    #[test]
+    fn test_menu_item_count() {
+        let items = MenuItem::all();
+        assert!(items.len() >= 35);
+    }
+
+    #[test]
+    fn test_menu_item_labels() {
+        for item in MenuItem::all() {
+            assert!(!item.label().is_empty());
+            assert!(!item.description().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_theme_count() {
+        assert_eq!(THEME_NAMES.len(), 12);
+    }
+
+    #[test]
+    fn test_theme_from_index() {
+        for i in 0..12 {
+            let _theme = Theme::from_index(i);
+        }
+    }
+
+    #[test]
+    fn test_gauge_bar() {
+        let bar = make_gauge_bar(0.5, 10);
+        assert!(bar.contains('█'));
+        assert!(bar.chars().count() <= 10);
+    }
+
+    #[test]
+    fn test_gauge_bar_zero() {
+        let bar = make_gauge_bar(0.0, 10);
+        // ratio 0.0 produces empty bar (no filled, no partial)
+        assert!(bar.chars().count() == 0 || bar.chars().all(|c| c == '░'));
+    }
+
+    #[test]
+    fn test_gauge_bar_full() {
+        let bar = make_gauge_bar(1.0, 10);
+        assert_eq!(bar.chars().count(), 10);
+    }
+
+    #[test]
+    fn test_history_entry() {
+        let entry = HistoryEntry {
+            timestamp: "2026-01-01 00:00:00".to_string(),
+            action: "Test".to_string(),
+            source: "test".to_string(),
+            files_processed: 10,
+            files_removed: 2,
+            files_renamed: 3,
+            original_size: 1000,
+            compressed_size: 500,
+            duration_secs: 1.5,
+            errors: 0,
+        };
+        assert_eq!(entry.files_processed, 10);
+        assert_eq!(entry.errors, 0);
+    }
+
+    #[test]
+    fn test_duplicate_group() {
+        let group = DuplicateGroup {
+            hash: "abc123".to_string(),
+            files: vec![
+                ("/path/1.jpg".to_string(), 1000),
+                ("/path/2.jpg".to_string(), 1000),
+            ],
+            selected: 0,
+        };
+        assert_eq!(group.files.len(), 2);
+    }
+
+    #[test]
+    fn test_similar_image_group() {
+        let group = SimilarImageGroup {
+            hash: 0b1010_1010,
+            files: vec![
+                ("/path/1.jpg".to_string(), 1000),
+                ("/path/2.jpg".to_string(), 2000),
+            ],
+            hash_type: "aHash".to_string(),
+        };
+        assert_eq!(group.files.len(), 2);
+        assert_eq!(group.hash_type, "aHash");
+    }
+
+    #[test]
+    fn test_ahash_identical() {
+        use image::{ImageBuffer, Luma};
+        let img: ImageBuffer<Luma<u8>, Vec<u8>> = ImageBuffer::from_pixel(8, 8, Luma([128u8]));
+        let tmp = std::env::temp_dir().join("pixpipe_test_ahash.png");
+        img.save(&tmp).unwrap();
+        let hash1 = calculate_ahash(&tmp).unwrap();
+        let hash2 = calculate_ahash(&tmp).unwrap();
+        assert_eq!(hash1, hash2);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_dhash_identical() {
+        use image::{ImageBuffer, Luma};
+        let img: ImageBuffer<Luma<u8>, Vec<u8>> = ImageBuffer::from_pixel(8, 8, Luma([128u8]));
+        let tmp = std::env::temp_dir().join("pixpipe_test_dhash.png");
+        img.save(&tmp).unwrap();
+        let hash1 = calculate_dhash(&tmp).unwrap();
+        let hash2 = calculate_dhash(&tmp).unwrap();
+        assert_eq!(hash1, hash2);
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_hamming_distance_zero() {
+        assert_eq!(hamming_distance(0xFF, 0xFF), 0);
+    }
+
+    #[test]
+    fn test_hamming_distance_max() {
+        assert_eq!(hamming_distance(0x00, 0xFF), 8);
+    }
+
+    #[test]
+    fn test_hamming_distance_one() {
+        assert_eq!(hamming_distance(0b0000_0000, 0b0000_0001), 1);
+    }
+
+    #[test]
+    fn test_full_step_labels() {
+        assert_eq!(FULL_STEP_LABELS.len(), 5);
+        assert!(FULL_STEP_LABELS[0].contains("Move"));
+        assert!(FULL_STEP_LABELS[1].contains("duplicates") || FULL_STEP_LABELS[1].contains("Duplicate"));
     }
 }
