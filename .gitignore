@@ -1,0 +1,5 @@
+/target
+*.exe
+*.pdb
+execution.log
+config.json

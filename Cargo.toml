@@ -1,0 +1,17 @@
+[package]
+name = "pixpipe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sha2 = "0.10"
+chrono = "0.4"
+walkdir = "2.4"
+ratatui = "0.29"
+crossterm = "0.28"
+sysinfo = "0.30"
+image = "0.25"
+regex-lite = "0.1"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
