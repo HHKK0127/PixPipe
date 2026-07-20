@@ -805,6 +805,308 @@ impl Theme {
 }
 
 // ============================================================
+// UI Components (ferrocopy-inspired)
+// ============================================================
+
+// Toast notification with auto-dismiss
+#[derive(Debug, Clone)]
+struct Toast {
+    id: u64,
+    message: String,
+    toast_type: ToastType,
+    remaining: f32, // seconds until auto-dismiss
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ToastType {
+    Info,
+    Success,
+    Error,
+    Warning,
+}
+
+static NEXT_TOAST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+impl Toast {
+    fn new(message: impl Into<String>, toast_type: ToastType) -> Self {
+        let id = NEXT_TOAST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self {
+            id,
+            message: message.into(),
+            toast_type,
+            remaining: 5.0,
+        }
+    }
+}
+
+// Button variant styles
+#[derive(Clone, Copy, PartialEq)]
+enum ButtonVariant {
+    Primary,
+    Secondary,
+    Success,
+    Danger,
+    Ghost,
+}
+
+// Badge variant styles
+#[derive(Clone, Copy, PartialEq)]
+enum BadgeVariant {
+    Info,
+    Success,
+    Warning,
+    Error,
+    Muted,
+}
+
+// Alert variant styles
+#[derive(Clone, Copy, PartialEq)]
+enum AlertVariant {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+/// Render a status badge with icon and color
+fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
+    let (icon, color, text) = match status {
+        "copying" | "processing" => ("▶", theme.accent, "Processing"),
+        "paused" => ("⏸", theme.warning, "Paused"),
+        "done" | "complete" => ("✓", theme.success, "Done"),
+        "error" => ("✗", theme.error, "Error"),
+        "scanning" => ("⟳", theme.primary, "Scanning"),
+        _ => (" ", theme.muted, "Ready"),
+    };
+    Line::from(Span::styled(
+        format!(" {} {} ", icon, text),
+        Style::default().fg(Color::White).bg(color),
+    ))
+}
+
+/// Render a styled button with variant
+fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> Line<'static> {
+    let (fg, _bg) = match variant {
+        ButtonVariant::Primary => (Color::White, theme.primary),
+        ButtonVariant::Secondary => (theme.fg, theme.muted),
+        ButtonVariant::Success => (Color::White, theme.success),
+        ButtonVariant::Danger => (Color::White, theme.error),
+        ButtonVariant::Ghost => (theme.fg, Color::Reset),
+    };
+    Line::from(Span::styled(format!(" {} ", label), Style::default().fg(fg)))
+}
+
+/// Render a badge with variant
+fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'static> {
+    let color = match variant {
+        BadgeVariant::Info => theme.primary,
+        BadgeVariant::Success => theme.success,
+        BadgeVariant::Warning => theme.warning,
+        BadgeVariant::Error => theme.error,
+        BadgeVariant::Muted => theme.muted,
+    };
+    Line::from(Span::styled(
+        format!(" {} ", text),
+        Style::default().fg(Color::White).bg(color),
+    ))
+}
+
+/// Render an alert box with icon, title, and message
+fn render_alert(title: &str, message: &str, variant: AlertVariant, theme: &Theme) -> Vec<Line<'static>> {
+    let (icon, color) = match variant {
+        AlertVariant::Info => ("ℹ", theme.primary),
+        AlertVariant::Success => ("✔", theme.success),
+        AlertVariant::Warning => ("⚠", theme.warning),
+        AlertVariant::Error => ("✖", theme.error),
+    };
+    vec![
+        Line::from(vec![
+            Span::styled(format!("  {} ", icon), Style::default().fg(color)),
+            Span::styled(title.to_string(), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(Span::styled(
+            format!("    {}", message),
+            Style::default().fg(theme.muted),
+        )),
+    ]
+}
+
+/// Render a section heading with icon
+fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(
+            text.to_string(),
+            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+        ),
+    ])
+}
+
+/// Render an empty state placeholder
+fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> Vec<Line<'static>> {
+    vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("    {}", icon),
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(Span::styled(
+            format!("    {}", title),
+            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            format!("    {}", message),
+            Style::default().fg(theme.muted),
+        )),
+        Line::from(""),
+    ]
+}
+
+/// Render a card/panel frame with border
+fn render_card_frame<'a>(title: &str, content_lines: Vec<Line<'a>>, theme: &Theme) -> Vec<Line<'a>> {
+    let width: usize = 60;
+    let border = "─".repeat(width.saturating_sub(2));
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled("┌", Style::default().fg(theme.muted)),
+            Span::styled(format!(" {} ", title), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
+            Span::styled(border.clone(), Style::default().fg(theme.muted)),
+        ]),
+    ];
+    for line in content_lines {
+        let mut new_spans: Vec<Span<'a>> = vec![
+            Span::styled("│ ", Style::default().fg(theme.muted)),
+        ];
+        for span in line.spans {
+            new_spans.push(span);
+        }
+        lines.push(Line::from(new_spans));
+    }
+    lines.push(Line::from(Span::styled(
+        format!("└{}", "─".repeat(width.saturating_sub(1))),
+        Style::default().fg(theme.muted),
+    )));
+    lines
+}
+
+/// Render a file table row with columns
+fn render_file_table_row(
+    icon: &str,
+    name: &str,
+    size: &str,
+    progress: f64,
+    status: &str,
+    theme: &Theme,
+) -> Line<'static> {
+    let status_color = match status {
+        "Done" => theme.success,
+        "Copying" | "Processing" => theme.accent,
+        "Error" => theme.error,
+        _ => theme.muted,
+    };
+    let bar = make_gauge_bar(progress, 10);
+    Line::from(vec![
+        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(format!("{:<30}", truncate_str(name, 30)), Style::default().fg(theme.fg)),
+        Span::styled(format!("{:>10}", size), Style::default().fg(theme.muted)),
+        Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+        Span::styled(format!(" {:>5.1}%", progress * 100.0), Style::default().fg(theme.accent)),
+        Span::styled(format!(" {}", status), Style::default().fg(status_color)),
+    ])
+}
+
+/// Render enhanced progress display with speed, ETA, elapsed
+fn render_progress_detail(
+    progress: f64,
+    speed: &str,
+    eta: &str,
+    elapsed: &str,
+    files_done: usize,
+    total_files: usize,
+    current_file: &str,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
+    let bar = make_gauge_bar(progress, 40);
+    vec![
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                format!("{:>5.1}%", progress * 100.0),
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(format!("Speed: {}", speed), Style::default().fg(theme.fg)),
+            Span::styled("  │  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("ETA: {}", eta), Style::default().fg(theme.fg)),
+            Span::styled("  │  ", Style::default().fg(theme.muted)),
+            Span::styled(format!("Elapsed: {}", elapsed), Style::default().fg(theme.fg)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                format!("Files: {}/{}", files_done, total_files),
+                Style::default().fg(theme.muted),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                format!("Current: {}", truncate_str(current_file, 50)),
+                Style::default().fg(theme.muted),
+            ),
+        ]),
+    ]
+}
+
+/// Render toast overlay (top-right corner)
+fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme) {
+    let max_toasts = 3;
+    let toast_width = 40.min(area.width.saturating_sub(2) as usize);
+    let start_y = area.y + 1;
+
+    for (i, toast) in toasts.iter().take(max_toasts).enumerate() {
+        let y = start_y + i as u16 * 3;
+        if y + 2 > area.y + area.height {
+            break;
+        }
+        let x = area.x + area.width.saturating_sub(toast_width as u16 + 2);
+        let toast_area = Rect::new(x, y, toast_width as u16 + 2, 2);
+
+        let (icon, color) = match toast.toast_type {
+            ToastType::Info => ("ℹ", theme.primary),
+            ToastType::Success => ("✔", theme.success),
+            ToastType::Error => ("✖", theme.error),
+            ToastType::Warning => ("⚠", theme.warning),
+        };
+
+        let toast_block = Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", icon), Style::default().fg(color)),
+            Span::styled(
+                truncate_str(&toast.message, toast_width.saturating_sub(4)),
+                Style::default().fg(theme.fg),
+            ),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(color)),
+        );
+        f.render_widget(toast_block, toast_area);
+    }
+}
+
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+// ============================================================
 // Animated gauge chars
 // ============================================================
 
@@ -1332,6 +1634,9 @@ struct App {
     similar_file_selected: usize,
     similar_threshold: u32,  // Hamming distance threshold (0-64)
     similar_scroll: usize,
+    // Toast notifications (ferrocopy-inspired)
+    toasts: Vec<Toast>,
+    toast_timer: Instant,
 }
 
 impl App {
@@ -1536,11 +1841,26 @@ impl App {
             similar_file_selected: 0,
             similar_threshold: 10,
             similar_scroll: 0,
+            toasts: Vec::new(),
+            toast_timer: Instant::now(),
         }
     }
 
     fn theme(&self) -> Theme {
         Theme::from_index(self.theme_idx)
+    }
+
+    fn push_toast(&mut self, message: impl Into<String>, toast_type: ToastType) {
+        self.toasts.push(Toast::new(message, toast_type));
+    }
+
+    fn update_toasts(&mut self) {
+        let elapsed = self.toast_timer.elapsed().as_secs_f32();
+        self.toast_timer = Instant::now();
+        self.toasts.retain_mut(|t| {
+            t.remaining -= elapsed;
+            t.remaining > 0.0
+        });
     }
 
     fn scan_preview(&mut self) {
@@ -5039,6 +5359,10 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::KeybindCustom => render_keybind_custom(f, app, chunks[1]),
     }
 
+    // Toast notifications overlay (ferrocopy-inspired)
+    app.update_toasts();
+    render_toasts(&app.toasts, chunks[1], f, &theme);
+
     // Status bar (keybinds + info)
     render_status_bar(f, app, chunks[2]);
 
@@ -5333,11 +5657,12 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
+            Constraint::Length(2),  // Table header
             Constraint::Min(0),
         ])
         .split(area);
 
-    // Info bar
+    // Info bar with section heading
     let info = Paragraph::new(format!(
         "  {} rename candidates │ {} total files │ {} total size",
         app.preview_items.len(),
@@ -5345,27 +5670,39 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         format_size(app.preview_total_size)
     ))
     .style(Style::default().fg(theme.warning))
-    .block(Block::default().borders(Borders::ALL).title("File Summary"));
+    .block(Block::default().borders(Borders::ALL).title(" 📁 File Summary "));
     f.render_widget(info, chunks[0]);
 
-    // Preview list
+    // Table header (ferrocopy-inspired)
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled("  Icon ", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Span::styled("Old Name", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Span::styled(" → ", Style::default().fg(theme.muted)),
+        Span::styled("New Name", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+    ]))
+    .block(Block::default().borders(Borders::ALL).title("Columns"));
+    f.render_widget(header, chunks[1]);
+
+    // Preview list with file table rows
     if app.preview_items.is_empty() {
-        let empty = Paragraph::new("  No rename changes detected")
-            .style(Style::default().fg(theme.muted))
+        let empty_lines = render_empty_state("📭", "No changes detected", "No rename candidates found", &theme);
+        let empty = Paragraph::new(empty_lines)
             .block(Block::default().borders(Borders::ALL).title("Changes (Enter to start)"));
-        f.render_widget(empty, chunks[1]);
+        f.render_widget(empty, chunks[2]);
     } else {
-        let visible_height = chunks[1].height.saturating_sub(2) as usize;
+        let visible_height = chunks[2].height.saturating_sub(2) as usize;
         let start = app.preview_scroll;
         let end = (start + visible_height).min(app.preview_items.len());
 
         let items: Vec<ListItem> = app.preview_items[start..end]
             .iter()
             .map(|(old, new)| {
+                let icon = if old.ends_with(".jxl") { "  " } else if old.ends_with(".jpg") || old.ends_with(".jpeg") { "  " } else { "  " };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("  {}", old), Style::default().fg(theme.error)),
+                    Span::styled(format!("  {} ", icon), Style::default().fg(theme.accent)),
+                    Span::styled(format!("{:<40}", truncate_str(old, 40)), Style::default().fg(theme.error)),
                     Span::styled(" → ", Style::default().fg(theme.muted)),
-                    Span::styled(new.clone(), Style::default().fg(theme.success)),
+                    Span::styled(truncate_str(new, 40), Style::default().fg(theme.success)),
                 ]))
             })
             .collect();
@@ -5374,7 +5711,7 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
             .block(Block::default().borders(Borders::ALL).title(
                 format!("Changes ({}-{}/{}, Enter to start)", start + 1, end, app.preview_items.len())
             ));
-        f.render_widget(list, chunks[1]);
+        f.render_widget(list, chunks[2]);
     }
 }
 
@@ -5384,20 +5721,26 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Current step
+            Constraint::Length(3),  // Current step with status badge
             Constraint::Length(3),  // Main progress
             Constraint::Length(3),  // Sub-progress
-            Constraint::Length(3),  // Stats (speed, ETA, files)
+            Constraint::Length(6),  // Enhanced stats (speed, ETA, elapsed, files, current)
             Constraint::Min(0),    // Log
         ])
         .split(area);
 
-    // Current step with spinner
+    // Current step with spinner and status badge
     let step_text = app.current_step.lock().unwrap().clone();
     let sp = SPINNER_CHARS[app.spinner_idx];
-    let step = Paragraph::new(format!("{} {}", sp, step_text))
-        .style(Style::default().fg(theme.warning).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::ALL).title("Current Step"));
+    let step = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(format!("{} ", sp), Style::default().fg(theme.warning)),
+            Span::styled(step_text, Style::default().fg(theme.fg)),
+        ]),
+        render_status_badge("processing", &theme),
+    ])
+    .style(Style::default().fg(theme.warning).add_modifier(Modifier::BOLD))
+    .block(Block::default().borders(Borders::ALL).title(" ⚙ Current Step "));
     f.render_widget(step, chunks[0]);
 
     // Main progress bar with visual gauge
@@ -5405,7 +5748,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let gauge_width = (chunks[1].width.saturating_sub(20)) as usize;
     let bar = make_gauge_bar(progress_val, gauge_width);
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title("Progress"))
+        .block(Block::default().borders(Borders::ALL).title(" 📊 Progress "))
         .gauge_style(Style::default().fg(theme.primary).bg(Color::Black))
         .ratio(progress_val)
         .label(format!("{} {:.0}%", bar, progress_val * 100.0));
@@ -5427,10 +5770,10 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled(format!(" {}[{}] ", label, mini_bar), Style::default().fg(color))
     }).collect();
     let sub_progress = Paragraph::new(Line::from(sub_bars))
-        .block(Block::default().borders(Borders::ALL).title("Steps"));
+        .block(Block::default().borders(Borders::ALL).title(" 📋 Steps "));
     f.render_widget(sub_progress, chunks[2]);
 
-    // Stats: speed, ETA, files processed
+    // Enhanced stats display (ferrocopy-inspired)
     let elapsed = app.start_time.lock().unwrap()
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
@@ -5441,14 +5784,22 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     } else { 0.0 };
 
     let detail_text = app.progress_detail.lock().unwrap().clone();
-    let stats_line = Line::from(vec![
-        Span::styled(format!("  {} ", detail_text), Style::default().fg(Color::White)),
-        Span::styled(format!("│ {:.1} files/s ", speed), Style::default().fg(theme.primary)),
-        Span::styled(format!("│ ETA: {} ", format_duration(remaining)), Style::default().fg(theme.warning)),
-        Span::styled(format!("│ {} files", processed), Style::default().fg(theme.success)),
-    ]);
-    let stats = Paragraph::new(stats_line)
-        .block(Block::default().borders(Borders::ALL).title("Stats"));
+    let speed_str = format!("{:.1} files/s", speed);
+    let eta_str = format_duration(remaining);
+    let elapsed_str = format_duration(elapsed);
+
+    let stats_lines = render_progress_detail(
+        progress_val,
+        &speed_str,
+        &eta_str,
+        &elapsed_str,
+        processed,
+        sp.len(),
+        &detail_text,
+        &theme,
+    );
+    let stats = Paragraph::new(stats_lines)
+        .block(Block::default().borders(Borders::ALL).title(" 📈 Stats "));
     f.render_widget(stats, chunks[3]);
 
     // Log
@@ -5461,41 +5812,47 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // Status + stats
+            Constraint::Length(7),  // Status + stats with enhanced display
             Constraint::Length(if app.errors.lock().unwrap().is_empty() { 0 } else { 8 }),
             Constraint::Min(0),    // Log
         ])
         .split(area);
 
-    // Completion message with stats
+    // Completion message with stats and status badge
     let has_errors = !app.errors.lock().unwrap().is_empty();
     let elapsed = app.start_time.lock().unwrap()
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
     let processed = *app.files_processed.lock().unwrap();
 
-    let status_text = if has_errors {
-        format!("⚠ Process completed with errors")
+    let status_badge = if has_errors {
+        render_status_badge("error", &theme)
     } else {
-        format!("✓ Process completed successfully!")
+        render_status_badge("done", &theme)
     };
-    let status_color = if has_errors { theme.warning } else { theme.success };
 
     let stats_text = format!(
-        "  Files: {} │ Duration: {} │ Errors: {} │ Theme: {}",
+        "Files: {} │ Duration: {} │ Errors: {} │ Theme: {}",
         processed, format_duration(elapsed), app.errors.lock().unwrap().len(), THEME_NAMES[app.theme_idx]
     );
 
     let done_lines = vec![
-        Line::from(Span::styled(status_text, Style::default().fg(status_color).add_modifier(Modifier::BOLD))),
+        status_badge,
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                if has_errors { "Process completed with errors" } else { "Process completed successfully!" },
+                Style::default().fg(if has_errors { theme.warning } else { theme.success }).add_modifier(Modifier::BOLD),
+            ),
+        ]),
         Line::from(""),
-        Line::from(Span::styled(stats_text, Style::default().fg(theme.muted))),
+        Line::from(Span::styled(format!("  {}", stats_text), Style::default().fg(theme.muted))),
     ];
     let done_msg = Paragraph::new(done_lines)
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+        .block(Block::default().borders(Borders::ALL).title(" ✓ Status "));
     f.render_widget(done_msg, chunks[0]);
 
-    // Error list
+    // Error list with alert styling
     if has_errors {
         let errors = app.errors.lock().unwrap();
         let err_items: Vec<ListItem> = errors
@@ -5507,7 +5864,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
             .collect();
         let err_list = List::new(err_items)
             .block(Block::default().borders(Borders::ALL).title(
-                format!("Errors ({})", errors.len())
+                format!("{} Errors", errors.len())
             ));
         f.render_widget(err_list, chunks[1]);
     }
