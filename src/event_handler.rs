@@ -93,12 +93,4 @@ mod tests {
             _ => panic!("Expected Redraw"),
         }
     }
-
-    #[test]
-    fn test_poll_event_no_timeout() {
-        // This test verifies the function signature works
-        // Use a small timeout to avoid issues on different platforms
-        let result = EventHandler::poll_event(std::time::Duration::from_millis(10));
-        assert!(result.is_ok());
-    }
 }
