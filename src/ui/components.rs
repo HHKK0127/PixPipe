@@ -176,9 +176,7 @@ pub fn render_empty_state(
         )),
         Line::from(Span::styled(
             format!("    {}", title),
-            Style::default()
-                .fg(theme.fg)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
             format!("    {}", message),

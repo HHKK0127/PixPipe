@@ -1,10 +1,10 @@
 // Config Module - Configuration management for PixPipe
 // This module handles settings, presets, and configuration persistence.
 
-use std::path::PathBuf;
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,39 +116,39 @@ impl AppConfig {
         if !path.exists() {
             return Ok(Self::default());
         }
-        
+
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
         Ok(config)
     }
-    
+
     /// Save configuration to file
     pub fn save(&self, path: &std::path::Path) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         std::fs::write(path, content)?;
         Ok(())
     }
-    
+
     /// Get preset by name
     pub fn get_preset(&self, name: &str) -> Option<&Preset> {
         self.presets.get(name)
     }
-    
+
     /// Add or update preset
     pub fn set_preset(&mut self, name: String, preset: Preset) {
         self.presets.insert(name, preset);
     }
-    
+
     /// Remove preset
     pub fn remove_preset(&mut self, name: &str) -> Option<Preset> {
         self.presets.remove(name)
     }
-    
+
     /// List all preset names
     pub fn preset_names(&self) -> Vec<&str> {
         self.presets.keys().map(|s| s.as_str()).collect()
@@ -164,7 +164,7 @@ pub struct KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         let mut bindings = HashMap::new();
-        
+
         // Navigation
         bindings.insert("quit".to_string(), "q,Esc".to_string());
         bindings.insert("help".to_string(), "h,?".to_string());
@@ -172,19 +172,19 @@ impl Default for KeyBindings {
         bindings.insert("menu_down".to_string(), "j,Down".to_string());
         bindings.insert("select".to_string(), "l,Enter".to_string());
         bindings.insert("back".to_string(), "h,Backspace".to_string());
-        
+
         // Processing
         bindings.insert("start".to_string(), "s".to_string());
         bindings.insert("pause".to_string(), "p".to_string());
         bindings.insert("cancel".to_string(), "c".to_string());
         bindings.insert("undo".to_string(), "u".to_string());
-        
+
         // View
         bindings.insert("preview".to_string(), "v".to_string());
         bindings.insert("info".to_string(), "i".to_string());
         bindings.insert("filter".to_string(), "f".to_string());
         bindings.insert("sort".to_string(), "o".to_string());
-        
+
         Self { bindings }
     }
 }
@@ -195,27 +195,28 @@ impl KeyBindings {
         if !path.exists() {
             return Ok(Self::default());
         }
-        
+
         let content = std::fs::read_to_string(path)?;
         let bindings: Self = toml::from_str(&content)?;
         Ok(bindings)
     }
-    
+
     /// Save key bindings to file
     pub fn save(&self, path: &std::path::Path) -> Result<()> {
         let content = toml::to_string_pretty(self)?;
-        
+
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        
+
         std::fs::write(path, content)?;
         Ok(())
     }
-    
+
     /// Get keys for action
     pub fn get_keys(&self, action: &str) -> Vec<&str> {
-        self.bindings.get(action)
+        self.bindings
+            .get(action)
             .map(|s| s.split(',').collect())
             .unwrap_or_default()
     }
@@ -243,18 +244,18 @@ pub struct ScheduledTask {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
         assert_eq!(config.processing.quality, 85);
         assert_eq!(config.ui.theme, "dark");
     }
-    
+
     #[test]
     fn test_preset_management() {
         let mut config = AppConfig::default();
-        
+
         let preset = Preset {
             name: "web".to_string(),
             description: "Web optimized".to_string(),
@@ -267,12 +268,12 @@ mod tests {
             }),
             filters: vec![],
         };
-        
+
         config.set_preset("web".to_string(), preset);
         assert!(config.get_preset("web").is_some());
         assert_eq!(config.get_preset("web").unwrap().quality, Some(80));
     }
-    
+
     #[test]
     fn test_key_bindings() {
         let bindings = KeyBindings::default();

@@ -11,8 +11,8 @@ use ratatui::{
 
 use super::components::*;
 use crate::App;
-use crate::Theme;
 use crate::FileTreeNode;
+use crate::Theme;
 
 /// Render the status bar at the top of the screen
 pub fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {

@@ -1,8 +1,8 @@
 // Files Module - File operations for PixPipe
 // This module contains all file I/O and processing logic.
 
-use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
+use std::path::{Path, PathBuf};
 
 /// Safe file name extraction
 pub fn safe_file_name(path: &Path) -> String {
@@ -30,9 +30,7 @@ pub fn safe_extension(path: &Path) -> String {
 
 /// Safe parent directory extraction
 pub fn safe_parent(path: &Path) -> PathBuf {
-    path.parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf()
+    path.parent().unwrap_or(Path::new(".")).to_path_buf()
 }
 
 /// Safe mutex lock with poison recovery
@@ -44,35 +42,35 @@ pub fn safe_lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T>
 pub fn copy_file_verified(src: &Path, dst: &Path) -> Result<u64> {
     use std::fs;
     use std::io::Read;
-    
+
     let bytes = fs::copy(src, dst)?;
-    
+
     // Verify copy
     let mut src_file = fs::File::open(src)?;
     let mut dst_file = fs::File::open(dst)?;
     let mut src_buf = [0u8; 8192];
     let mut dst_buf = [0u8; 8192];
-    
+
     loop {
         let src_read = src_file.read(&mut src_buf)?;
         let dst_read = dst_file.read(&mut dst_buf)?;
-        
+
         if src_read != dst_read || src_buf[..src_read] != dst_buf[..dst_read] {
             return Err(anyhow!("File verification failed for {}", dst.display()));
         }
-        
+
         if src_read == 0 {
             break;
         }
     }
-    
+
     Ok(bytes)
 }
 
 /// Move file with verification
 pub fn move_file_verified(src: &Path, dst: &Path) -> Result<u64> {
     use std::fs;
-    
+
     // Try rename first (atomic on same filesystem)
     match fs::rename(src, dst) {
         Ok(()) => {
@@ -91,7 +89,7 @@ pub fn move_file_verified(src: &Path, dst: &Path) -> Result<u64> {
 /// Create directory if it doesn't exist
 pub fn ensure_dir(path: &Path) -> Result<()> {
     use std::fs;
-    
+
     if !path.exists() {
         fs::create_dir_all(path)?;
     }
@@ -101,16 +99,16 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 /// List files in directory with optional extension filter
 pub fn list_files(dir: &Path, extensions: Option<&[&str]>) -> Result<Vec<PathBuf>> {
     use std::fs;
-    
+
     if !dir.is_dir() {
         return Err(anyhow!("{} is not a directory", dir.display()));
     }
-    
+
     let mut files = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if path.is_file() {
             if let Some(exts) = extensions {
                 if let Some(ext) = path.extension() {
@@ -124,14 +122,14 @@ pub fn list_files(dir: &Path, extensions: Option<&[&str]>) -> Result<Vec<PathBuf
             }
         }
     }
-    
+
     Ok(files)
 }
 
 /// Get file size in bytes
 pub fn file_size(path: &Path) -> Result<u64> {
     use std::fs;
-    
+
     let metadata = fs::metadata(path)?;
     Ok(metadata.len())
 }
@@ -142,7 +140,7 @@ pub fn format_size(bytes: u64) -> String {
     const MB: u64 = KB * 1024;
     const GB: u64 = MB * 1024;
     const TB: u64 = GB * 1024;
-    
+
     if bytes >= TB {
         format!("{:.2} TB", bytes as f64 / TB as f64)
     } else if bytes >= GB {
@@ -173,7 +171,7 @@ pub fn format_duration(ms: u64) -> String {
 pub fn sanitize_filename(name: &str) -> String {
     let invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
     let mut result = String::new();
-    
+
     for ch in name.chars() {
         if invalid_chars.contains(&ch) {
             result.push('_');
@@ -181,7 +179,7 @@ pub fn sanitize_filename(name: &str) -> String {
             result.push(ch);
         }
     }
-    
+
     // Trim trailing spaces and dots (Windows)
     let trimmed = result.trim_end_matches(|c: char| c == ' ' || c == '.');
     trimmed.to_string()
@@ -192,11 +190,11 @@ pub fn unique_path(path: &Path) -> PathBuf {
     if !path.exists() {
         return path.to_path_buf();
     }
-    
+
     let parent = safe_parent(path);
     let stem = safe_file_stem(path);
     let ext = safe_extension(path);
-    
+
     let mut counter = 1;
     loop {
         let new_name = if ext.is_empty() {
@@ -204,7 +202,7 @@ pub fn unique_path(path: &Path) -> PathBuf {
         } else {
             format!("{} ({}).{}", stem, counter, ext)
         };
-        
+
         let new_path = parent.join(&new_name);
         if !new_path.exists() {
             return new_path;
@@ -216,11 +214,11 @@ pub fn unique_path(path: &Path) -> PathBuf {
 /// Check if path is an image file
 pub fn is_image_file(path: &Path) -> bool {
     let image_extensions = [
-        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "avif",
-        "ico", "svg", "heic", "heif", "jxl", "j2k", "jp2", "raw", "cr2",
-        "nef", "arw", "dng", "rw2", "orf", "srw", "pef", "raf",
+        "jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "webp", "avif", "ico", "svg", "heic",
+        "heif", "jxl", "j2k", "jp2", "raw", "cr2", "nef", "arw", "dng", "rw2", "orf", "srw", "pef",
+        "raf",
     ];
-    
+
     if let Some(ext) = path.extension() {
         let ext_str = ext.to_string_lossy().to_lowercase();
         image_extensions.contains(&ext_str.as_str())

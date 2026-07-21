@@ -1,6 +1,6 @@
-mod ui;
-mod core_mod;
 mod config;
+mod core_mod;
+mod ui;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -955,7 +955,7 @@ impl Theme {
 
 // Toast notification with auto-dismiss (using ui::components)
 #[allow(dead_code)]
-use ui::components::{Toast, ToastType, ButtonVariant, BadgeVariant, AlertVariant};
+use ui::components::{AlertVariant, BadgeVariant, ButtonVariant, Toast, ToastType};
 
 /// Render a status badge with icon and color
 fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
