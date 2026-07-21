@@ -962,10 +962,7 @@ fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> 
         ButtonVariant::Danger => (Color::White, theme.error),
         ButtonVariant::Ghost => (theme.fg, Color::Reset),
     };
-    Line::from(Span::styled(
-        format!(" {label} "),
-        Style::default().fg(fg),
-    ))
+    Line::from(Span::styled(format!(" {label} "), Style::default().fg(fg)))
 }
 
 /// Render a badge with variant
@@ -1142,10 +1139,7 @@ fn render_progress_detail(
             Span::styled("  │  ", Style::default().fg(theme.muted)),
             Span::styled(format!("ETA: {eta}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
-            Span::styled(
-                format!("Elapsed: {elapsed}"),
-                Style::default().fg(theme.fg),
-            ),
+            Span::styled(format!("Elapsed: {elapsed}"), Style::default().fg(theme.fg)),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -2893,7 +2887,10 @@ impl App {
 
     // B3 #7: Update breadcrumb
     fn update_breadcrumb(&mut self, path: &str) {
-        self.breadcrumb = path.split(" > ").map(std::string::ToString::to_string).collect();
+        self.breadcrumb = path
+            .split(" > ")
+            .map(std::string::ToString::to_string)
+            .collect();
     }
 
     // B3 #9: Add recent file
@@ -3523,9 +3520,7 @@ fn run_full_process(
         let total = files.len();
 
         // Parallel hash computation using rayon
-        set_detail(format!(
-            "Computing hashes for {total} files (parallel)..."
-        ));
+        set_detail(format!("Computing hashes for {total} files (parallel)..."));
         let hashes: Vec<(PathBuf, Option<String>)> = files
             .par_iter()
             .map(|entry| {
@@ -3592,9 +3587,7 @@ fn run_full_process(
             let ref_total = ref_files.len();
 
             // Parallel hash computation for reference files
-            set_detail(format!(
-                "Building ref DB: {ref_total} files (parallel)..."
-            ));
+            set_detail(format!("Building ref DB: {ref_total} files (parallel)..."));
             let ref_hashes_vec: Vec<String> = ref_files
                 .par_iter()
                 .filter_map(|entry| calculate_sha256(&entry.path().to_path_buf()).ok())
@@ -3645,9 +3638,7 @@ fn run_full_process(
             return;
         }
         step_num += 1;
-        set_step(format!(
-            "STEP {step_num}/{total_steps}: Renaming files..."
-        ));
+        set_step(format!("STEP {step_num}/{total_steps}: Renaming files..."));
         set_prog(0.6);
         set_step_prog(3, 0.0);
         log("[STEP 4] Renaming files...".into());
@@ -5240,11 +5231,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             }
                             KeyCode::Char(' ') => match app.dashboard_selected {
                                 0 => {
-                                    app.widget_layout.show_summary = !app.widget_layout.show_summary;
+                                    app.widget_layout.show_summary =
+                                        !app.widget_layout.show_summary;
                                 }
                                 1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
                                 2 => {
-                                    app.widget_layout.show_history = !app.widget_layout.show_history;
+                                    app.widget_layout.show_history =
+                                        !app.widget_layout.show_history;
                                 }
                                 3 => {
                                     app.widget_layout.show_compression =
@@ -6757,10 +6750,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 theme.muted
             };
-            Span::styled(
-                format!(" {label}[{mini_bar}] "),
-                Style::default().fg(color),
-            )
+            Span::styled(format!(" {label}[{mini_bar}] "), Style::default().fg(color))
         })
         .collect();
     let sub_progress = Paragraph::new(Line::from(sub_bars))
@@ -7810,10 +7800,7 @@ fn render_info_panel(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}{old}"),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(format!("{prefix}{old}"), style)))
         })
         .collect();
 
@@ -8193,10 +8180,7 @@ fn render_history_export(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}  {fmt}"),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(format!("{prefix}  {fmt}"), style)))
         })
         .collect();
 
@@ -8585,10 +8569,7 @@ fn render_config_io(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(
-                format!("{prefix}  {opt}"),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(format!("{prefix}  {opt}"), style)))
         })
         .collect();
 
@@ -9060,9 +9041,12 @@ fn add_watermark(dest: &str, _text: &str, log: &dyn Fn(String)) -> usize {
                     let pixel = rgba.get_pixel_mut(x, y);
                     // Alpha blend
                     let alpha = f64::from(wm_color[3]) / 255.0;
-                    pixel[0] = (f64::from(pixel[0]) * (1.0 - alpha) + f64::from(wm_color[0]) * alpha) as u8;
-                    pixel[1] = (f64::from(pixel[1]) * (1.0 - alpha) + f64::from(wm_color[1]) * alpha) as u8;
-                    pixel[2] = (f64::from(pixel[2]) * (1.0 - alpha) + f64::from(wm_color[2]) * alpha) as u8;
+                    pixel[0] = (f64::from(pixel[0]) * (1.0 - alpha)
+                        + f64::from(wm_color[0]) * alpha) as u8;
+                    pixel[1] = (f64::from(pixel[1]) * (1.0 - alpha)
+                        + f64::from(wm_color[1]) * alpha) as u8;
+                    pixel[2] = (f64::from(pixel[2]) * (1.0 - alpha)
+                        + f64::from(wm_color[2]) * alpha) as u8;
                 }
             }
             if let Err(e) = rgba.save(&path) {
@@ -9189,7 +9173,8 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|job| {
             let fname = std::path::Path::new(&job.path)
-                .file_name().map_or_else(|| job.path.clone(), |n| n.to_string_lossy().to_string());
+                .file_name()
+                .map_or_else(|| job.path.clone(), |n| n.to_string_lossy().to_string());
             ListItem::new(Line::from(Span::raw(format!("  {fname}"))))
         })
         .collect();
@@ -9208,7 +9193,8 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .flat_map(|g| g.files.iter())
         .map(|df| {
             let fname = std::path::Path::new(&df.0)
-                .file_name().map_or_else(|| df.0.clone(), |n| n.to_string_lossy().to_string());
+                .file_name()
+                .map_or_else(|| df.0.clone(), |n| n.to_string_lossy().to_string());
             ListItem::new(Line::from(Span::raw(format!("  {fname}"))))
         })
         .collect();
@@ -9261,10 +9247,7 @@ fn render_quick_actions(f: &mut Frame, app: &mut App, area: Rect) {
                 4 => " ",
                 _ => " ",
             };
-            ListItem::new(Line::from(Span::styled(
-                format!("  {icon} {label}"),
-                style,
-            )))
+            ListItem::new(Line::from(Span::styled(format!("  {icon} {label}"), style)))
         })
         .collect();
 
@@ -9315,7 +9298,8 @@ fn render_recent_files(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|rf| {
             let fname = std::path::Path::new(&rf.path)
-                .file_name().map_or_else(|| rf.path.clone(), |n| n.to_string_lossy().to_string());
+                .file_name()
+                .map_or_else(|| rf.path.clone(), |n| n.to_string_lossy().to_string());
             let size_str = if rf.size > 1_000_000 {
                 format!("{:.1} MB", rf.size as f64 / 1_000_000.0)
             } else {
@@ -9391,10 +9375,7 @@ fn render_tag_system(f: &mut Frame, app: &mut App, area: Rect) {
             let tags_str = ft.tags.join(", ");
             ListItem::new(Line::from(vec![
                 Span::styled(format!("  📁 {} ", ft.file_pattern), style),
-                Span::styled(
-                    format!("[{tags_str}]"),
-                    Style::default().fg(Color::Yellow),
-                ),
+                Span::styled(format!("[{tags_str}]"), Style::default().fg(Color::Yellow)),
             ]))
         })
         .collect();
@@ -10010,7 +9991,8 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
         let mut file_items: Vec<ListItem> = Vec::new();
         for (i, (path, size)) in group.files.iter().enumerate() {
             let fname = std::path::Path::new(path)
-                .file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().to_string());
+                .file_name()
+                .map_or_else(|| path.clone(), |n| n.to_string_lossy().to_string());
             let size_str = if *size > 1_000_000 {
                 format!("{:.1} MB", *size as f64 / 1_000_000.0)
             } else {
@@ -10157,11 +10139,9 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         "⚪ Stopped"
     };
-    let status_block = Paragraph::new(format!(
-        "  {watch_status} │ r: Sync now │ w: Toggle watch"
-    ))
-    .style(Style::default().fg(theme.accent))
-    .block(Block::default().borders(Borders::ALL).title("Status"));
+    let status_block = Paragraph::new(format!("  {watch_status} │ r: Sync now │ w: Toggle watch"))
+        .style(Style::default().fg(theme.accent))
+        .block(Block::default().borders(Borders::ALL).title("Status"));
     f.render_widget(status_block, chunks[2]);
 
     // Log
@@ -10247,9 +10227,7 @@ struct GitHubRelease {
 
 #[allow(dead_code)]
 fn check_for_updates() -> Option<String> {
-    let url = format!(
-        "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-    );
+    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
 
     let client = reqwest::blocking::Client::builder()
         .user_agent("pixpipe")

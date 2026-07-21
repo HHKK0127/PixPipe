@@ -100,10 +100,7 @@ pub fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme)
         ButtonVariant::Danger => (Color::White, theme.error),
         ButtonVariant::Ghost => (theme.fg, Color::Reset),
     };
-    Line::from(Span::styled(
-        format!(" {label} "),
-        Style::default().fg(fg),
-    ))
+    Line::from(Span::styled(format!(" {label} "), Style::default().fg(fg)))
 }
 
 /// Render a badge with variant
@@ -285,10 +282,7 @@ pub fn render_progress_detail(
             Span::styled("  │  ", Style::default().fg(theme.muted)),
             Span::styled(format!("ETA: {eta}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
-            Span::styled(
-                format!("Elapsed: {elapsed}"),
-                Style::default().fg(theme.fg),
-            ),
+            Span::styled(format!("Elapsed: {elapsed}"), Style::default().fg(theme.fg)),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),

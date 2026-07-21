@@ -37,7 +37,9 @@ pub fn safe_parent(path: &Path) -> PathBuf {
 
 /// Safe mutex lock with poison recovery
 pub fn safe_lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Copy file with verification

@@ -121,7 +121,9 @@ pub fn compute_dir_hash(dir: &Path, algorithm: &str) -> Result<String> {
     use std::fs;
 
     let mut hasher = Sha256::new();
-    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(std::result::Result::ok).collect();
+    let mut entries: Vec<_> = fs::read_dir(dir)?
+        .filter_map(std::result::Result::ok)
+        .collect();
 
     // Sort for deterministic hash
     entries.sort_by_key(std::fs::DirEntry::path);
