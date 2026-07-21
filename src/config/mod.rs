@@ -275,4 +275,34 @@ mod tests {
         assert!(quit_keys.contains(&"q"));
         assert!(quit_keys.contains(&"Esc"));
     }
+
+    #[test]
+    fn test_preset_management_basic() {
+        let mut config = AppConfig::default();
+        let preset = Preset {
+            name: "test".to_string(),
+            description: "Test preset".to_string(),
+            format: Some("jpg".to_string()),
+            quality: Some(90),
+            resize: None,
+            filters: vec![],
+        };
+
+        config.set_preset("test".to_string(), preset);
+        assert!(config.get_preset("test").is_some());
+        assert_eq!(config.preset_names().len(), 1);
+
+        let removed = config.remove_preset("test");
+        assert!(removed.is_some());
+        assert!(config.get_preset("test").is_none());
+    }
+
+    #[test]
+    fn test_theme_config() {
+        let config = UiConfig::default();
+        // Default theme may vary
+        assert!(!config.theme.is_empty());
+        assert!(config.show_preview);
+        assert!(config.show_statusbar);
+    }
 }

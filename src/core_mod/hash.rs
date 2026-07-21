@@ -206,4 +206,25 @@ mod tests {
         assert_eq!(dupes.len(), 1);
         assert_eq!(dupes["hash1"].len(), 2);
     }
+
+    #[test]
+    fn test_phash_distance_basic() {
+        assert_eq!(phash_distance(0, 0), 0);
+        assert_eq!(phash_distance(0, 1), 1);
+        assert_eq!(phash_distance(0, 3), 2);
+    }
+
+    #[test]
+    fn test_find_similar_images() {
+        let files = vec![
+            ("a.jpg".to_string(), 0b11110000u64),
+            ("b.jpg".to_string(), 0b11110001u64),
+            ("c.jpg".to_string(), 0b00001111u64),
+        ];
+
+        let similar = find_similar_images(&files, 2);
+        assert_eq!(similar.len(), 1);
+        assert_eq!(similar[0].0, "a.jpg");
+        assert_eq!(similar[0].1, "b.jpg");
+    }
 }

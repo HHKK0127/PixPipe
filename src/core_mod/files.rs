@@ -249,3 +249,106 @@ pub fn mime_type(path: &Path) -> &'static str {
         "application/octet-stream"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_safe_file_name() {
+        let path = PathBuf::from("/home/user/test.txt");
+        assert_eq!(safe_file_name(&path), "test.txt");
+    }
+
+    #[test]
+    fn test_safe_file_name_empty() {
+        let path = PathBuf::from("");
+        assert_eq!(safe_file_name(&path), "");
+    }
+
+    #[test]
+    fn test_safe_file_stem() {
+        let path = PathBuf::from("/home/user/test.txt");
+        assert_eq!(safe_file_stem(&path), "test");
+    }
+
+    #[test]
+    fn test_safe_extension() {
+        let path = PathBuf::from("/home/user/test.txt");
+        assert_eq!(safe_extension(&path), "txt");
+    }
+
+    #[test]
+    fn test_safe_extension_no_ext() {
+        let path = PathBuf::from("/home/user/test");
+        assert_eq!(safe_extension(&path), "");
+    }
+
+    #[test]
+    fn test_safe_parent() {
+        let path = PathBuf::from("/home/user/test.txt");
+        assert_eq!(safe_parent(&path), PathBuf::from("/home/user"));
+    }
+
+    #[test]
+    fn test_safe_parent_no_parent() {
+        let path = PathBuf::from("test.txt");
+        let parent = safe_parent(&path);
+        // safe_parent returns "" for relative paths with no parent
+        assert!(parent == PathBuf::from("") || parent == PathBuf::from("."));
+    }
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(format_size(100), "100 B");
+    }
+
+    #[test]
+    fn test_format_size_kb() {
+        assert_eq!(format_size(1024), "1.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_mb() {
+        assert_eq!(format_size(1048576), "1.00 MB");
+    }
+
+    #[test]
+    fn test_format_size_gb() {
+        assert_eq!(format_size(1073741824), "1.00 GB");
+    }
+
+    #[test]
+    fn test_format_duration_ms() {
+        let result = format_duration(1000);
+        assert!(result.contains("1") && (result.contains("s") || result.contains("sec")));
+        let result2 = format_duration(60000);
+        assert!(result2.contains("1") && (result2.contains("m") || result2.contains("min")));
+    }
+
+    #[test]
+    fn test_sanitize_filename() {
+        assert_eq!(sanitize_filename("test.txt"), "test.txt");
+        // sanitize_filename replaces spaces with underscores (not in invalid_chars)
+        let sanitized = sanitize_filename("test file.txt");
+        assert!(sanitized.contains("test") && sanitized.contains("file"));
+        // sanitize_filename replaces invalid characters like / \ : * ? " < > |
+        let sanitized2 = sanitize_filename("test<file>.txt");
+        assert!(!sanitized2.contains("<") && !sanitized2.contains(">"));
+    }
+
+    #[test]
+    fn test_is_image_file() {
+        assert!(is_image_file(Path::new("test.jpg")));
+        assert!(is_image_file(Path::new("test.png")));
+        assert!(!is_image_file(Path::new("test.txt")));
+    }
+
+    #[test]
+    fn test_mime_type() {
+        assert_eq!(mime_type(Path::new("test.jpg")), "image/jpeg");
+        assert_eq!(mime_type(Path::new("test.png")), "image/png");
+        assert_eq!(mime_type(Path::new("test.txt")), "application/octet-stream");
+    }
+}
