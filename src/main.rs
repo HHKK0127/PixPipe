@@ -1,33 +1,35 @@
-use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
-use std::io::{self, Write, BufReader, Read};
-use std::collections::{HashSet, HashMap};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Instant, Duration};
-use sha2::{Sha256, Digest};
-use chrono::Utc;
-use walkdir::WalkDir;
-use serde::{Deserialize, Serialize};
-use sysinfo::System;
-use image::GenericImageView;
 use anyhow::{Context, Result};
-use log::{info, warn, error};
-use rayon::prelude::*;
+use chrono::Utc;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, EnableMouseCapture, DisableMouseCapture},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    },
     execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use image::GenericImageView;
+use log::{error, info, warn};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, BarChart},
+    widgets::{BarChart, Block, Borders, Gauge, List, ListItem, Paragraph},
     Frame, Terminal,
 };
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::{self, BufReader, Read, Write};
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+use sysinfo::System;
+use walkdir::WalkDir;
 
 // ============================================================
 // Constants
@@ -36,8 +38,8 @@ use ratatui::{
 const BUFFER_SIZE: usize = 65536;
 
 const DEFAULT_IMAGE_EXTENSIONS: &[&str] = &[
-    ".jxl", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp",
-    ".heic", ".heif", ".cr2", ".nef", ".arw", ".tiff", ".tif",
+    ".jxl", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic", ".heif", ".cr2", ".nef",
+    ".arw", ".tiff", ".tif",
 ];
 
 const FULL_STEP_LABELS: &[&str] = &[
@@ -48,7 +50,20 @@ const FULL_STEP_LABELS: &[&str] = &[
     "STEP 5: Convert to JXL",
 ];
 
-const THEME_NAMES: &[&str] = &["Cyan", "Green", "Magenta", "Yellow", "Blue", "Red", "Solarized", "Dracula", "Nord", "Monokai", "Light", "Sepia"];
+const THEME_NAMES: &[&str] = &[
+    "Cyan",
+    "Green",
+    "Magenta",
+    "Yellow",
+    "Blue",
+    "Red",
+    "Solarized",
+    "Dracula",
+    "Nord",
+    "Monokai",
+    "Light",
+    "Sepia",
+];
 
 // ============================================================
 // Config
@@ -95,7 +110,10 @@ impl Default for Config {
             dest: r"Z:\Pictures\Rename".into(),
             reference: r"Z:\R1".into(),
             days_to_check: 7,
-            image_extensions: DEFAULT_IMAGE_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+            image_extensions: DEFAULT_IMAGE_EXTENSIONS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             min_file_size_kb: 0,
             max_workers: 4,
             profiles: Vec::new(),
@@ -131,10 +149,8 @@ impl Config {
     }
 
     fn save(&self) -> Result<()> {
-        let data = serde_json::to_string_pretty(self)
-            .context("Failed to serialize config")?;
-        fs::write("config.json", data)
-            .context("Failed to write config.json")?;
+        let data = serde_json::to_string_pretty(self).context("Failed to serialize config")?;
+        fs::write("config.json", data).context("Failed to write config.json")?;
         info!("Config saved to config.json");
         Ok(())
     }
@@ -267,11 +283,20 @@ struct KeyBindings {
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            quit: "q".into(), theme: "t".into(), dry_run: "d".into(),
-            undo: "u".into(), help: "?".into(), filter: "f".into(),
-            sort: "s".into(), profile: "p".into(), batch: "b".into(),
-            export_log: "Ctrl+e".into(), pause: "Ctrl+p".into(),
-            info: "i".into(), stats: "S".into(), watch: "w".into(),
+            quit: "q".into(),
+            theme: "t".into(),
+            dry_run: "d".into(),
+            undo: "u".into(),
+            help: "?".into(),
+            filter: "f".into(),
+            sort: "s".into(),
+            profile: "p".into(),
+            batch: "b".into(),
+            export_log: "Ctrl+e".into(),
+            pause: "Ctrl+p".into(),
+            info: "i".into(),
+            stats: "S".into(),
+            watch: "w".into(),
         }
     }
 }
@@ -325,7 +350,11 @@ impl FileFilter {
         // Extension filter
         if !self.extensions.is_empty() {
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if !self.extensions.iter().any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext))) {
+                if !self
+                    .extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
+                {
                     return false;
                 }
             } else {
@@ -336,14 +365,20 @@ impl FileFilter {
         if self.min_size_kb > 0 || self.max_size_kb > 0 {
             if let Ok(meta) = fs::metadata(path) {
                 let size_kb = meta.len() / 1024;
-                if self.min_size_kb > 0 && size_kb < self.min_size_kb { return false; }
-                if self.max_size_kb > 0 && size_kb > self.max_size_kb { return false; }
+                if self.min_size_kb > 0 && size_kb < self.min_size_kb {
+                    return false;
+                }
+                if self.max_size_kb > 0 && size_kb > self.max_size_kb {
+                    return false;
+                }
             }
         }
         // Name pattern filter
         if !self.name_pattern.is_empty() {
             let name = path.file_name().unwrap().to_string_lossy().to_lowercase();
-            if !name.contains(&self.name_pattern.to_lowercase()) { return false; }
+            if !name.contains(&self.name_pattern.to_lowercase()) {
+                return false;
+            }
         }
         true
     }
@@ -354,7 +389,12 @@ impl FileFilter {
 // ============================================================
 
 #[derive(Clone, PartialEq, Debug)]
-enum SortField { Name, Size, Date, Type }
+enum SortField {
+    Name,
+    Size,
+    Date,
+    Type,
+}
 
 #[derive(Clone)]
 struct SortConfig {
@@ -363,7 +403,12 @@ struct SortConfig {
 }
 
 impl Default for SortConfig {
-    fn default() -> Self { Self { field: SortField::Name, ascending: true } }
+    fn default() -> Self {
+        Self {
+            field: SortField::Name,
+            ascending: true,
+        }
+    }
 }
 
 // ============================================================
@@ -404,13 +449,18 @@ impl AppStateStore {
         let path = PathBuf::from(".io_tool_state.json");
         if path.exists() {
             if let Ok(data) = fs::read_to_string(&path) {
-                if let Ok(s) = serde_json::from_str(&data) { return s; }
+                if let Ok(s) = serde_json::from_str(&data) {
+                    return s;
+                }
             }
         }
         Self::default()
     }
     fn save(&self) {
-        let _ = fs::write(".io_tool_state.json", serde_json::to_string_pretty(self).unwrap_or_default());
+        let _ = fs::write(
+            ".io_tool_state.json",
+            serde_json::to_string_pretty(self).unwrap_or_default(),
+        );
     }
 }
 
@@ -440,10 +490,30 @@ impl Default for ConversionPreset {
 impl ConversionPreset {
     fn presets() -> Vec<Self> {
         vec![
-            Self { name: "Web".into(), quality: 80, lossless: false, description: "Smaller files for web".into() },
-            Self { name: "Archive".into(), quality: 100, lossless: true, description: "Lossless for archiving".into() },
-            Self { name: "Balance".into(), quality: 90, lossless: false, description: "Quality-size balance".into() },
-            Self { name: "Max Quality".into(), quality: 100, lossless: false, description: "Maximum quality lossy".into() },
+            Self {
+                name: "Web".into(),
+                quality: 80,
+                lossless: false,
+                description: "Smaller files for web".into(),
+            },
+            Self {
+                name: "Archive".into(),
+                quality: 100,
+                lossless: true,
+                description: "Lossless for archiving".into(),
+            },
+            Self {
+                name: "Balance".into(),
+                quality: 90,
+                lossless: false,
+                description: "Quality-size balance".into(),
+            },
+            Self {
+                name: "Max Quality".into(),
+                quality: 100,
+                lossless: false,
+                description: "Maximum quality lossy".into(),
+            },
         ]
     }
 }
@@ -682,49 +752,85 @@ impl Theme {
         match idx % 12 {
             // Cyan (default)
             0 => Theme {
-                primary: Color::Cyan, _secondary: Color::LightCyan, accent: Color::White,
-                success: Color::Green, error: Color::Red, warning: Color::Yellow,
-                muted: Color::DarkGray, bg_highlight: Color::Cyan,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Cyan,
+                _secondary: Color::LightCyan,
+                accent: Color::White,
+                success: Color::Green,
+                error: Color::Red,
+                warning: Color::Yellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Cyan,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Green
             1 => Theme {
-                primary: Color::Green, _secondary: Color::LightGreen, accent: Color::White,
-                success: Color::LightGreen, error: Color::Red, warning: Color::Yellow,
-                muted: Color::DarkGray, bg_highlight: Color::Green,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Green,
+                _secondary: Color::LightGreen,
+                accent: Color::White,
+                success: Color::LightGreen,
+                error: Color::Red,
+                warning: Color::Yellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Green,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Magenta
             2 => Theme {
-                primary: Color::Magenta, _secondary: Color::LightMagenta, accent: Color::White,
-                success: Color::Green, error: Color::Red, warning: Color::Yellow,
-                muted: Color::DarkGray, bg_highlight: Color::Magenta,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Magenta,
+                _secondary: Color::LightMagenta,
+                accent: Color::White,
+                success: Color::Green,
+                error: Color::Red,
+                warning: Color::Yellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Magenta,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Yellow
             3 => Theme {
-                primary: Color::Yellow, _secondary: Color::LightYellow, accent: Color::Black,
-                success: Color::Green, error: Color::Red, warning: Color::LightYellow,
-                muted: Color::DarkGray, bg_highlight: Color::Yellow,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Yellow,
+                _secondary: Color::LightYellow,
+                accent: Color::Black,
+                success: Color::Green,
+                error: Color::Red,
+                warning: Color::LightYellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Yellow,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Blue
             4 => Theme {
-                primary: Color::Blue, _secondary: Color::LightBlue, accent: Color::White,
-                success: Color::Green, error: Color::Red, warning: Color::Yellow,
-                muted: Color::DarkGray, bg_highlight: Color::Blue,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Blue,
+                _secondary: Color::LightBlue,
+                accent: Color::White,
+                success: Color::Green,
+                error: Color::Red,
+                warning: Color::Yellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Blue,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Red
             5 => Theme {
-                primary: Color::Red, _secondary: Color::LightRed, accent: Color::White,
-                success: Color::Green, error: Color::LightRed, warning: Color::Yellow,
-                muted: Color::DarkGray, bg_highlight: Color::Red,
-                bg: Color::Black, fg: Color::White,
+                primary: Color::Red,
+                _secondary: Color::LightRed,
+                accent: Color::White,
+                success: Color::Green,
+                error: Color::LightRed,
+                warning: Color::Yellow,
+                muted: Color::DarkGray,
+                bg_highlight: Color::Red,
+                bg: Color::Black,
+                fg: Color::White,
             },
             // Solarized (Dark)
             6 => Theme {
-                primary: Color::Rgb(38, 139, 210),   // Solarized blue
+                primary: Color::Rgb(38, 139, 210),    // Solarized blue
                 _secondary: Color::Rgb(42, 161, 152), // Solarized cyan
                 accent: Color::Rgb(203, 75, 22),      // Solarized orange
                 success: Color::Rgb(133, 153, 0),     // Solarized green
@@ -737,7 +843,7 @@ impl Theme {
             },
             // Dracula
             7 => Theme {
-                primary: Color::Rgb(189, 147, 249),   // Purple
+                primary: Color::Rgb(189, 147, 249),    // Purple
                 _secondary: Color::Rgb(139, 233, 253), // Cyan
                 accent: Color::Rgb(255, 121, 198),     // Pink
                 success: Color::Rgb(80, 250, 123),     // Green
@@ -750,7 +856,7 @@ impl Theme {
             },
             // Nord
             8 => Theme {
-                primary: Color::Rgb(136, 192, 208),   // Frost
+                primary: Color::Rgb(136, 192, 208),    // Frost
                 _secondary: Color::Rgb(129, 161, 193), // Frost light
                 accent: Color::Rgb(180, 142, 173),     // Aurora purple
                 success: Color::Rgb(163, 190, 140),    // Aurora green
@@ -763,7 +869,7 @@ impl Theme {
             },
             // Monokai
             9 => Theme {
-                primary: Color::Rgb(166, 226, 46),    // Green
+                primary: Color::Rgb(166, 226, 46),     // Green
                 _secondary: Color::Rgb(102, 217, 239), // Cyan
                 accent: Color::Rgb(249, 38, 114),      // Pink
                 success: Color::Rgb(166, 226, 46),     // Green
@@ -776,29 +882,29 @@ impl Theme {
             },
             // Light
             10 => Theme {
-                primary: Color::Rgb(0, 100, 200),      // Blue
-                _secondary: Color::Rgb(0, 150, 136),   // Teal
-                accent: Color::Rgb(200, 80, 0),        // Orange
-                success: Color::Rgb(46, 125, 50),      // Green
-                error: Color::Rgb(198, 40, 40),        // Red
-                warning: Color::Rgb(245, 124, 0),      // Amber
-                muted: Color::Rgb(158, 158, 158),      // Gray
+                primary: Color::Rgb(0, 100, 200),    // Blue
+                _secondary: Color::Rgb(0, 150, 136), // Teal
+                accent: Color::Rgb(200, 80, 0),      // Orange
+                success: Color::Rgb(46, 125, 50),    // Green
+                error: Color::Rgb(198, 40, 40),      // Red
+                warning: Color::Rgb(245, 124, 0),    // Amber
+                muted: Color::Rgb(158, 158, 158),    // Gray
                 bg_highlight: Color::Rgb(224, 224, 224),
-                bg: Color::Rgb(250, 250, 250),         // Near white
-                fg: Color::Rgb(33, 33, 33),            // Near black
+                bg: Color::Rgb(250, 250, 250), // Near white
+                fg: Color::Rgb(33, 33, 33),    // Near black
             },
             // Sepia
             _ => Theme {
-                primary: Color::Rgb(140, 100, 50),     // Brown
-                _secondary: Color::Rgb(180, 140, 80),  // Tan
-                accent: Color::Rgb(200, 120, 40),      // Amber
-                success: Color::Rgb(100, 140, 60),     // Olive green
-                error: Color::Rgb(180, 60, 40),        // Dark red
-                warning: Color::Rgb(200, 160, 40),     // Gold
-                muted: Color::Rgb(160, 140, 110),      // Warm gray
+                primary: Color::Rgb(140, 100, 50),    // Brown
+                _secondary: Color::Rgb(180, 140, 80), // Tan
+                accent: Color::Rgb(200, 120, 40),     // Amber
+                success: Color::Rgb(100, 140, 60),    // Olive green
+                error: Color::Rgb(180, 60, 40),       // Dark red
+                warning: Color::Rgb(200, 160, 40),    // Gold
+                muted: Color::Rgb(160, 140, 110),     // Warm gray
                 bg_highlight: Color::Rgb(230, 215, 190),
-                bg: Color::Rgb(250, 240, 225),         // Cream
-                fg: Color::Rgb(60, 40, 20),            // Dark brown
+                bg: Color::Rgb(250, 240, 225), // Cream
+                fg: Color::Rgb(60, 40, 20),    // Dark brown
             },
         }
     }
@@ -893,7 +999,10 @@ fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> 
         ButtonVariant::Danger => (Color::White, theme.error),
         ButtonVariant::Ghost => (theme.fg, Color::Reset),
     };
-    Line::from(Span::styled(format!(" {} ", label), Style::default().fg(fg)))
+    Line::from(Span::styled(
+        format!(" {} ", label),
+        Style::default().fg(fg),
+    ))
 }
 
 /// Render a badge with variant
@@ -912,7 +1021,12 @@ fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'stati
 }
 
 /// Render an alert box with icon, title, and message
-fn render_alert(title: &str, message: &str, variant: AlertVariant, theme: &Theme) -> Vec<Line<'static>> {
+fn render_alert(
+    title: &str,
+    message: &str,
+    variant: AlertVariant,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     let (icon, color) = match variant {
         AlertVariant::Info => ("ℹ", theme.primary),
         AlertVariant::Success => ("✔", theme.success),
@@ -922,7 +1036,10 @@ fn render_alert(title: &str, message: &str, variant: AlertVariant, theme: &Theme
     vec![
         Line::from(vec![
             Span::styled(format!("  {} ", icon), Style::default().fg(color)),
-            Span::styled(title.to_string(), Style::default().fg(theme.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                title.to_string(),
+                Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(Span::styled(
             format!("    {}", message),
@@ -963,20 +1080,26 @@ fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> 
 }
 
 /// Render a card/panel frame with border
-fn render_card_frame<'a>(title: &str, content_lines: Vec<Line<'a>>, theme: &Theme) -> Vec<Line<'a>> {
+fn render_card_frame<'a>(
+    title: &str,
+    content_lines: Vec<Line<'a>>,
+    theme: &Theme,
+) -> Vec<Line<'a>> {
     let width: usize = 60;
     let border = "─".repeat(width.saturating_sub(2));
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled("┌", Style::default().fg(theme.muted)),
-            Span::styled(format!(" {} ", title), Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)),
-            Span::styled(border.clone(), Style::default().fg(theme.muted)),
-        ]),
-    ];
+    let mut lines = vec![Line::from(vec![
+        Span::styled("┌", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {} ", title),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(border.clone(), Style::default().fg(theme.muted)),
+    ])];
     for line in content_lines {
-        let mut new_spans: Vec<Span<'a>> = vec![
-            Span::styled("│ ", Style::default().fg(theme.muted)),
-        ];
+        let mut new_spans: Vec<Span<'a>> =
+            vec![Span::styled("│ ", Style::default().fg(theme.muted))];
         for span in line.spans {
             new_spans.push(span);
         }
@@ -1007,10 +1130,16 @@ fn render_file_table_row(
     let bar = make_gauge_bar(progress, 10);
     Line::from(vec![
         Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
-        Span::styled(format!("{:<30}", truncate_str(name, 30)), Style::default().fg(theme.fg)),
+        Span::styled(
+            format!("{:<30}", truncate_str(name, 30)),
+            Style::default().fg(theme.fg),
+        ),
         Span::styled(format!("{:>10}", size), Style::default().fg(theme.muted)),
         Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
-        Span::styled(format!(" {:>5.1}%", progress * 100.0), Style::default().fg(theme.accent)),
+        Span::styled(
+            format!(" {:>5.1}%", progress * 100.0),
+            Style::default().fg(theme.accent),
+        ),
         Span::styled(format!(" {}", status), Style::default().fg(status_color)),
     ])
 }
@@ -1032,7 +1161,9 @@ fn render_progress_detail(
             Span::styled("  ", Style::default()),
             Span::styled(
                 format!("{:>5.1}%", progress * 100.0),
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
         ]),
@@ -1042,7 +1173,10 @@ fn render_progress_detail(
             Span::styled("  │  ", Style::default().fg(theme.muted)),
             Span::styled(format!("ETA: {}", eta), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
-            Span::styled(format!("Elapsed: {}", elapsed), Style::default().fg(theme.fg)),
+            Span::styled(
+                format!("Elapsed: {}", elapsed),
+                Style::default().fg(theme.fg),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -1159,7 +1293,11 @@ fn format_duration(secs: f64) -> String {
     } else if secs < 3600.0 {
         format!("{}m {:.0}s", (secs / 60.0) as u32, secs % 60.0)
     } else {
-        format!("{}h {}m", (secs / 3600.0) as u32, ((secs % 3600.0) / 60.0) as u32)
+        format!(
+            "{}h {}m",
+            (secs / 3600.0) as u32,
+            ((secs % 3600.0) / 60.0) as u32
+        )
     }
 }
 
@@ -1175,40 +1313,40 @@ enum MenuItem {
     ImageToJxl,
     HashCacheDb,
     Settings,
-    BatchQueue,      // Feature #4
-    Profiles,        // Feature #9
-    WatchMode,       // Feature #20
-    Statistics,      // Feature #8
-    Duplicates,      // Feature #3
-    JxlSettings,     // Feature #19
-    SizeCompare,     // New #1
-    ErrorPanel,      // New #3
-    Presets,         // New #4
-    Scheduler,       // New #9
-    HistoryExport,   // New #10
-    ThemeEditor,     // New #11
-    CompressionGraph,// New #6
-    FileClassify,    // New #7
-    MetaEdit,        // New #8
-    ConfigIO,        // New #19
-    Plugins,         // New #20
+    BatchQueue,       // Feature #4
+    Profiles,         // Feature #9
+    WatchMode,        // Feature #20
+    Statistics,       // Feature #8
+    Duplicates,       // Feature #3
+    JxlSettings,      // Feature #19
+    SizeCompare,      // New #1
+    ErrorPanel,       // New #3
+    Presets,          // New #4
+    Scheduler,        // New #9
+    HistoryExport,    // New #10
+    ThemeEditor,      // New #11
+    CompressionGraph, // New #6
+    FileClassify,     // New #7
+    MetaEdit,         // New #8
+    ConfigIO,         // New #19
+    Plugins,          // New #20
     // Batch 3
-    ImagePreview,    // B3 #1
-    FuzzyFinder,     // B3 #3
-    SplitPane,       // B3 #6
-    QuickActions,    // B3 #8
-    RecentFiles,     // B3 #9
-    TagSystem,       // B3 #10
-    SideBySideDiff,  // B3 #11
-    FileTreeView,    // B3 #12
-    RenamePattern,   // B3 #13
-    Timeline,        // B3 #14
-    CommandPalette,  // B3 #16
+    ImagePreview,       // B3 #1
+    FuzzyFinder,        // B3 #3
+    SplitPane,          // B3 #6
+    QuickActions,       // B3 #8
+    RecentFiles,        // B3 #9
+    TagSystem,          // B3 #10
+    SideBySideDiff,     // B3 #11
+    FileTreeView,       // B3 #12
+    RenamePattern,      // B3 #13
+    Timeline,           // B3 #14
+    CommandPalette,     // B3 #16
     NotificationCenter, // B3 #17
-    ExportReport,    // B3 #19
-    SimilarImages,   // Similar image search
-    FolderSync,      // Folder sync/backup
-    KeybindCustom,   // Keybind customization
+    ExportReport,       // B3 #19
+    SimilarImages,      // Similar image search
+    FolderSync,         // Folder sync/backup
+    KeybindCustom,      // Keybind customization
 }
 
 impl MenuItem {
@@ -1305,7 +1443,9 @@ impl MenuItem {
     fn description(&self) -> &str {
         match self {
             MenuItem::FullProcess => "Run all steps in sequence | 全ステップを一括実行",
-            MenuItem::RenameOnly => "Remove underscores and parentheses | アンダースコア・括弧を除去",
+            MenuItem::RenameOnly => {
+                "Remove underscores and parentheses | アンダースコア・括弧を除去"
+            }
             MenuItem::TimestampRename => "Rename by last modified timestamp | 更新日時でリネーム",
             MenuItem::ImageToJxl => "Convert images to lossless JXL | 画像をロスレスJXL変換",
             MenuItem::HashCacheDb => "Run hash_cache_db for duplicates | 重複検出用ハッシュDB構築",
@@ -1322,7 +1462,9 @@ impl MenuItem {
             MenuItem::Scheduler => "Schedule batch processing | バッチ処理のスケジュール",
             MenuItem::HistoryExport => "Export history to CSV/JSON | 履歴をCSV/JSON出力",
             MenuItem::ThemeEditor => "Customize color theme | カラーテーマのカスタマイズ",
-            MenuItem::CompressionGraph => "Compression ratio by format | フォーマット別圧縮率グラフ",
+            MenuItem::CompressionGraph => {
+                "Compression ratio by format | フォーマット別圧縮率グラフ"
+            }
             MenuItem::FileClassify => "Auto-classify files by type | ファイル自動分類",
             MenuItem::MetaEdit => "Batch edit EXIF metadata | EXIFメタデータ一括編集",
             MenuItem::ConfigIO => "Import/export config files | 設定ファイルの导入/出力",
@@ -1331,7 +1473,9 @@ impl MenuItem {
             MenuItem::ImagePreview => "Preview images as ASCII art | 画像をASCIIアートでプレビュー",
             MenuItem::FuzzyFinder => "Fuzzy search files by name | ファジーファイル検索",
             MenuItem::SplitPane => "Split view comparison | 分割ビューで比較",
-            MenuItem::QuickActions => "Quick access to actions | よく使うアクションにクイックアクセス",
+            MenuItem::QuickActions => {
+                "Quick access to actions | よく使うアクションにクイックアクセス"
+            }
             MenuItem::RecentFiles => "View recently processed files | 最近処理したファイル",
             MenuItem::TagSystem => "Tag and categorize files | ファイルにタグ付け・分類",
             MenuItem::SideBySideDiff => "Compare before/after sizes | 変換前後のサイズを並列比較",
@@ -1341,7 +1485,9 @@ impl MenuItem {
             MenuItem::CommandPalette => "Search and execute commands | コマンド検索・実行",
             MenuItem::NotificationCenter => "View notification history | 通知履歴を表示",
             MenuItem::ExportReport => "Export processing report | 処理レポートを出力",
-            MenuItem::SimilarImages => "Find similar images (perceptual hash) | 類似画像検出(知覚ハッシュ)",
+            MenuItem::SimilarImages => {
+                "Find similar images (perceptual hash) | 類似画像検出(知覚ハッシュ)"
+            }
             MenuItem::FolderSync => "Sync folders and auto-backup | フォルダ同期・自動バックアップ",
             MenuItem::KeybindCustom => "Customize keyboard shortcuts | キーバインドのカスタマイズ",
         }
@@ -1354,54 +1500,54 @@ impl MenuItem {
 
 #[derive(Clone, PartialEq)]
 enum AppState {
-    Splash,             // Splash screen
+    Splash, // Splash screen
     Menu,
     StepSelect,
     Preview,
     Processing,
     Done,
     Settings,
-    Help,              // Feature #14
-    BatchQueue,        // Feature #4
-    DuplicateGroups,   // Feature #3
-    Stats,             // Feature #8
-    Profiles,          // Feature #9
-    JxlSettings,       // Feature #19
-    WatchMode,         // Feature #20
-    FilterSort,        // Feature #6, #7
-    InfoPanel,         // Feature #11
-    ConfirmDialog,     // Feature #13
+    Help,            // Feature #14
+    BatchQueue,      // Feature #4
+    DuplicateGroups, // Feature #3
+    Stats,           // Feature #8
+    Profiles,        // Feature #9
+    JxlSettings,     // Feature #19
+    WatchMode,       // Feature #20
+    FilterSort,      // Feature #6, #7
+    InfoPanel,       // Feature #11
+    ConfirmDialog,   // Feature #13
     // New features
-    SizeCompare,       // New #1: Size comparison
-    ErrorPanel,        // New #3: Error details
-    Presets,           // New #4: Conversion presets
-    Scheduler,         // New #9: Process scheduler
-    HistoryExport,     // New #10: History export
-    ThemeEditor,       // New #11: Theme editor
-    DashboardCustom,   // New #12: Dashboard customization
-    CompressionGraph,  // New #6: Compression graph
-    FileClassify,      // New #7: File classification
-    MetaEdit,          // New #8: Metadata batch edit
-    ConfigIO,          // New #19: Config import/export
-    Plugins,           // New #20: Plugin system
-    StatusbarCustom,   // New #15: Statusbar customization
-    RenamePreview,     // Rename before/after preview
+    SizeCompare,      // New #1: Size comparison
+    ErrorPanel,       // New #3: Error details
+    Presets,          // New #4: Conversion presets
+    Scheduler,        // New #9: Process scheduler
+    HistoryExport,    // New #10: History export
+    ThemeEditor,      // New #11: Theme editor
+    DashboardCustom,  // New #12: Dashboard customization
+    CompressionGraph, // New #6: Compression graph
+    FileClassify,     // New #7: File classification
+    MetaEdit,         // New #8: Metadata batch edit
+    ConfigIO,         // New #19: Config import/export
+    Plugins,          // New #20: Plugin system
+    StatusbarCustom,  // New #15: Statusbar customization
+    RenamePreview,    // Rename before/after preview
     // Batch 3
-    ImagePreview,      // B3 #1: Image preview
-    SplitPane,         // B3 #6: Split pane view
-    QuickActions,      // B3 #8: Quick actions menu
-    RecentFiles,       // B3 #9: Recent files
-    TagSystem,         // B3 #10: Tag system
-    SideBySideDiff,    // B3 #11: Side-by-side diff
-    FileTreeView,      // B3 #12: File tree view
-    RenamePattern,     // B3 #13: Batch rename pattern
-    Timeline,          // B3 #14: Processing timeline
-    CommandPalette,    // B3 #16: Command palette
-    NotificationCenter,// B3 #17: Notification center
-    ExportReport,      // B3 #19: Export report
-    SimilarImages,     // Similar image search
-    FolderSync,        // Folder sync/backup
-    KeybindCustom,     // Keybind customization
+    ImagePreview,       // B3 #1: Image preview
+    SplitPane,          // B3 #6: Split pane view
+    QuickActions,       // B3 #8: Quick actions menu
+    RecentFiles,        // B3 #9: Recent files
+    TagSystem,          // B3 #10: Tag system
+    SideBySideDiff,     // B3 #11: Side-by-side diff
+    FileTreeView,       // B3 #12: File tree view
+    RenamePattern,      // B3 #13: Batch rename pattern
+    Timeline,           // B3 #14: Processing timeline
+    CommandPalette,     // B3 #16: Command palette
+    NotificationCenter, // B3 #17: Notification center
+    ExportReport,       // B3 #19: Export report
+    SimilarImages,      // Similar image search
+    FolderSync,         // Folder sync/backup
+    KeybindCustom,      // Keybind customization
 }
 
 struct App {
@@ -1450,7 +1596,7 @@ struct App {
     frame_count: u64,
     // Feature #2: Pause/Resume
     is_paused: Arc<Mutex<bool>>,
-    is_interrupted: Arc<Mutex<bool>>,  // Esc to interrupt processing
+    is_interrupted: Arc<Mutex<bool>>, // Esc to interrupt processing
     checkpoint: Arc<Mutex<Option<Checkpoint>>>,
     // Feature #3: Duplicate groups
     duplicate_groups: Vec<DuplicateGroup>,
@@ -1632,7 +1778,7 @@ struct App {
     similar_groups: Vec<SimilarImageGroup>,
     similar_selected: usize,
     similar_file_selected: usize,
-    similar_threshold: u32,  // Hamming distance threshold (0-64)
+    similar_threshold: u32, // Hamming distance threshold (0-64)
     similar_scroll: usize,
     // Toast notifications (ferrocopy-inspired)
     toasts: Vec<Toast>,
@@ -1940,19 +2086,26 @@ impl App {
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| {
-                self.config.image_extensions.iter().any(|e| {
-                    e.eq_ignore_ascii_case(&format!(".{}", ext))
-                })
+                self.config
+                    .image_extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
             })
             .unwrap_or(false)
     }
 
     fn start_processing(&mut self) {
         self.state = AppState::Processing;
-        if let Ok(mut logs) = self.logs.lock() { logs.clear(); }
-        if let Ok(mut errs) = self.errors.lock() { errs.clear(); }
+        if let Ok(mut logs) = self.logs.lock() {
+            logs.clear();
+        }
+        if let Ok(mut errs) = self.errors.lock() {
+            errs.clear();
+        }
         if let Ok(mut sp) = self.step_progress.lock() {
-            for v in sp.iter_mut() { *v = 0.0; }
+            for v in sp.iter_mut() {
+                *v = 0.0;
+            }
         }
         *self.progress.lock().unwrap() = 0.0;
         *self.progress_detail.lock().unwrap() = String::new();
@@ -1979,28 +2132,64 @@ impl App {
         *self.is_interrupted.lock().unwrap() = false;
 
         thread::spawn(move || {
-            let log = |msg: String| { if let Ok(mut l) = logs.lock() { l.push(msg); } };
-            let set_prog = |v: f64| { if let Ok(mut p) = progress.lock() { *p = v; } };
-            let set_detail = |s: String| { if let Ok(mut d) = progress_detail.lock() { *d = s; } };
-            let set_step = |s: String| { if let Ok(mut st) = current_step.lock() { *st = s; } };
-            let add_error = |e: String| { if let Ok(mut errs) = errors.lock() { errs.push(e); } };
+            let log = |msg: String| {
+                if let Ok(mut l) = logs.lock() {
+                    l.push(msg);
+                }
+            };
+            let set_prog = |v: f64| {
+                if let Ok(mut p) = progress.lock() {
+                    *p = v;
+                }
+            };
+            let set_detail = |s: String| {
+                if let Ok(mut d) = progress_detail.lock() {
+                    *d = s;
+                }
+            };
+            let set_step = |s: String| {
+                if let Ok(mut st) = current_step.lock() {
+                    *st = s;
+                }
+            };
+            let add_error = |e: String| {
+                if let Ok(mut errs) = errors.lock() {
+                    errs.push(e);
+                }
+            };
             let set_step_prog = |step: usize, v: f64| {
-                if let Ok(mut sp) = step_progress.lock() { sp[step] = v; }
+                if let Ok(mut sp) = step_progress.lock() {
+                    sp[step] = v;
+                }
             };
             let inc_files = |n: usize| {
-                if let Ok(mut f) = files_processed.lock() { *f += n; }
+                if let Ok(mut f) = files_processed.lock() {
+                    *f += n;
+                }
             };
             let add_undo = |old: String, new: String| {
                 if let Ok(mut log) = undo_log.lock() {
-                    log.entries.push(UndoEntry { old_path: old, new_path: new });
+                    log.entries.push(UndoEntry {
+                        old_path: old,
+                        new_path: new,
+                    });
                     let _ = log.save();
                 }
             };
 
             run_full_process(
-                &config, &step_enabled, dry_run, &is_interrupted,
-                &log, &set_prog, &set_detail, &set_step, &add_error,
-                &set_step_prog, &inc_files, &add_undo,
+                &config,
+                &step_enabled,
+                dry_run,
+                &is_interrupted,
+                &log,
+                &set_prog,
+                &set_detail,
+                &set_step,
+                &add_error,
+                &set_step_prog,
+                &inc_files,
+                &add_undo,
             );
 
             *is_processing.lock().unwrap() = false;
@@ -2009,8 +2198,12 @@ impl App {
 
     fn start_single(&mut self, item: MenuItem) {
         self.state = AppState::Processing;
-        if let Ok(mut logs) = self.logs.lock() { logs.clear(); }
-        if let Ok(mut errs) = self.errors.lock() { errs.clear(); }
+        if let Ok(mut logs) = self.logs.lock() {
+            logs.clear();
+        }
+        if let Ok(mut errs) = self.errors.lock() {
+            errs.clear();
+        }
         *self.progress.lock().unwrap() = 0.0;
         *self.progress_detail.lock().unwrap() = String::new();
         *self.is_processing.lock().unwrap() = true;
@@ -2028,13 +2221,35 @@ impl App {
         let dry_run = self.dry_run;
 
         thread::spawn(move || {
-            let log = |msg: String| { if let Ok(mut l) = logs.lock() { l.push(msg); } };
-            let set_prog = |v: f64| { if let Ok(mut p) = progress.lock() { *p = v; } };
-            let set_detail = |s: String| { if let Ok(mut d) = progress_detail.lock() { *d = s; } };
-            let set_step = |s: String| { if let Ok(mut st) = current_step.lock() { *st = s; } };
-            let add_error = |e: String| { if let Ok(mut errs) = errors.lock() { errs.push(e); } };
+            let log = |msg: String| {
+                if let Ok(mut l) = logs.lock() {
+                    l.push(msg);
+                }
+            };
+            let set_prog = |v: f64| {
+                if let Ok(mut p) = progress.lock() {
+                    *p = v;
+                }
+            };
+            let set_detail = |s: String| {
+                if let Ok(mut d) = progress_detail.lock() {
+                    *d = s;
+                }
+            };
+            let set_step = |s: String| {
+                if let Ok(mut st) = current_step.lock() {
+                    *st = s;
+                }
+            };
+            let add_error = |e: String| {
+                if let Ok(mut errs) = errors.lock() {
+                    errs.push(e);
+                }
+            };
             let inc_files = |n: usize| {
-                if let Ok(mut f) = files_processed.lock() { *f += n; }
+                if let Ok(mut f) = files_processed.lock() {
+                    *f += n;
+                }
             };
 
             match item {
@@ -2042,7 +2257,15 @@ impl App {
                 MenuItem::RenameOnly => {
                     set_step("Renaming files...".into());
                     log("Starting rename only...".into());
-                    match run_with_progress(&config.dest, "rename", dry_run, &set_prog, &set_detail, &add_error, &inc_files) {
+                    match run_with_progress(
+                        &config.dest,
+                        "rename",
+                        dry_run,
+                        &set_prog,
+                        &set_detail,
+                        &add_error,
+                        &inc_files,
+                    ) {
                         Ok(n) => log(format!("✓ Renamed {} files", n)),
                         Err(e) => log(format!("Error: {}", e)),
                     }
@@ -2050,7 +2273,15 @@ impl App {
                 MenuItem::TimestampRename => {
                     set_step("Timestamp rename...".into());
                     log("Starting timestamp rename...".into());
-                    match run_with_progress(&config.dest, "timestamp", dry_run, &set_prog, &set_detail, &add_error, &inc_files) {
+                    match run_with_progress(
+                        &config.dest,
+                        "timestamp",
+                        dry_run,
+                        &set_prog,
+                        &set_detail,
+                        &add_error,
+                        &inc_files,
+                    ) {
                         Ok(n) => log(format!("✓ Renamed {} files", n)),
                         Err(e) => log(format!("Error: {}", e)),
                     }
@@ -2060,7 +2291,10 @@ impl App {
                     log("Starting JXL conversion...".into());
                     match convert_to_jxl(&config.dest) {
                         Ok(()) => log("✓ JXL conversion completed".into()),
-                        Err(e) => { log(format!("Error: {}", e)); add_error(e.to_string()); }
+                        Err(e) => {
+                            log(format!("Error: {}", e));
+                            add_error(e.to_string());
+                        }
                     }
                     set_prog(1.0);
                 }
@@ -2137,7 +2371,9 @@ impl App {
         } else {
             let logs = self.logs.lock().unwrap();
             let query = self.search_query.to_lowercase();
-            self.filtered_log_indices = logs.iter().enumerate()
+            self.filtered_log_indices = logs
+                .iter()
+                .enumerate()
                 .filter(|(_, msg)| msg.to_lowercase().contains(&query))
                 .map(|(i, _)| i)
                 .collect();
@@ -2148,10 +2384,17 @@ impl App {
     fn scan_duplicates(&mut self) {
         self.duplicate_groups.clear();
         let dest_path = PathBuf::from(&self.config.dest);
-        if !dest_path.exists() { return; }
+        if !dest_path.exists() {
+            return;
+        }
 
-        let files: Vec<_> = fs::read_dir(&dest_path).ok()
-            .map(|d| d.flatten().filter(|e| e.path().is_file()).collect::<Vec<_>>())
+        let files: Vec<_> = fs::read_dir(&dest_path)
+            .ok()
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| e.path().is_file())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
 
         let mut hash_map: HashMap<String, Vec<(String, u64)>> = HashMap::new();
@@ -2174,7 +2417,8 @@ impl App {
                 });
             }
         }
-        self.duplicate_groups.sort_by(|a, b| b.files.len().cmp(&a.files.len()));
+        self.duplicate_groups
+            .sort_by(|a, b| b.files.len().cmp(&a.files.len()));
     }
 
     // Feature #4: Add to batch queue
@@ -2190,7 +2434,10 @@ impl App {
     fn get_stats_data(&self) -> Vec<(String, u64)> {
         let mut data = Vec::new();
         for entry in self.history.entries.iter().rev().take(20) {
-            data.push((entry.timestamp[5..16].to_string(), entry.files_processed as u64));
+            data.push((
+                entry.timestamp[5..16].to_string(),
+                entry.files_processed as u64,
+            ));
         }
         data.reverse();
         data
@@ -2199,7 +2446,10 @@ impl App {
     // Feature #9: Save profile
     fn save_profile(&mut self, name: String) {
         self.config.profiles.retain(|p| p.name != name);
-        self.config.profiles.push(Profile { name, config: self.config.clone() });
+        self.config.profiles.push(Profile {
+            name,
+            config: self.config.clone(),
+        });
         let _ = self.config.save();
     }
 
@@ -2224,7 +2474,9 @@ impl App {
 
     // Feature #17: Retry logic wrapper
     fn retry_operation<F, T>(&mut self, mut op: F) -> Result<T, Box<dyn std::error::Error>>
-    where F: FnMut() -> Result<T, Box<dyn std::error::Error>> {
+    where
+        F: FnMut() -> Result<T, Box<dyn std::error::Error>>,
+    {
         let max = self.config.max_retries;
         for attempt in 0..=max {
             match op() {
@@ -2244,14 +2496,20 @@ impl App {
 
     // Feature #20: Watch mode scan
     fn watch_scan(&mut self) {
-        if !self.watch_active { return; }
+        if !self.watch_active {
+            return;
+        }
         let now = Instant::now();
-        if now.duration_since(self.watch_last_scan).as_secs() < self.config.watch_interval_secs { return; }
+        if now.duration_since(self.watch_last_scan).as_secs() < self.config.watch_interval_secs {
+            return;
+        }
         self.watch_last_scan = now;
 
         for dir in &self.config.watch_dirs.clone() {
             let path = PathBuf::from(dir);
-            if !path.exists() { continue; }
+            if !path.exists() {
+                continue;
+            }
             if let Ok(entries) = fs::read_dir(&path) {
                 for entry in entries.flatten() {
                     let p = entry.path();
@@ -2279,29 +2537,41 @@ impl App {
             info.push(("Size".into(), format_size(meta.len())));
             if let Ok(modified) = meta.modified() {
                 let dt: chrono::DateTime<chrono::Local> = modified.into();
-                info.push(("Modified".into(), dt.format("%Y-%m-%d %H:%M:%S").to_string()));
+                info.push((
+                    "Modified".into(),
+                    dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+                ));
             }
             if let Ok(created) = meta.created() {
                 let dt: chrono::DateTime<chrono::Local> = created.into();
                 info.push(("Created".into(), dt.format("%Y-%m-%d %H:%M:%S").to_string()));
             }
-            info.push(("Extension".into(), p.extension().unwrap_or_default().to_string_lossy().to_string()));
+            info.push((
+                "Extension".into(),
+                p.extension()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            ));
             info.push(("Path".into(), p.to_string_lossy().to_string()));
 
-                // EXIF metadata
-                if let Some(exif_data) = parse_exif(&p) {
-                    for (key, value) in exif_data {
-                        info.push((key, value));
-                    }
+            // EXIF metadata
+            if let Some(exif_data) = parse_exif(&p) {
+                for (key, value) in exif_data {
+                    info.push((key, value));
                 }
             }
-            info
         }
+        info
+    }
 
     // Feature #12: Export log
     fn export_log(&self) -> Result<(), Box<dyn std::error::Error>> {
         let logs = self.logs.lock().unwrap();
-        let path = format!("io_tool_log_{}.txt", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let path = format!(
+            "io_tool_log_{}.txt",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        );
         let content = logs.join("\n");
         fs::write(&path, content)?;
         Ok(())
@@ -2311,11 +2581,15 @@ impl App {
     fn build_size_comparisons(&mut self) {
         self.size_comparisons.clear();
         let dest = PathBuf::from(&self.config.dest);
-        if !dest.exists() { return; }
+        if !dest.exists() {
+            return;
+        }
         if let Ok(entries) = fs::read_dir(&dest) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_file() { continue; }
+                if !path.is_file() {
+                    continue;
+                }
                 let name = path.file_name().unwrap().to_string_lossy().to_string();
                 if let Ok(meta) = fs::metadata(&path) {
                     let size = meta.len();
@@ -2342,7 +2616,8 @@ impl App {
                 }
             }
         }
-        self.size_comparisons.sort_by(|a, b| b.reduction_pct.partial_cmp(&a.reduction_pct).unwrap());
+        self.size_comparisons
+            .sort_by(|a, b| b.reduction_pct.partial_cmp(&a.reduction_pct).unwrap());
     }
 
     // New #3: Error details collection
@@ -2364,13 +2639,19 @@ impl App {
     fn build_compression_stats(&mut self) {
         let mut stats: HashMap<String, (u64, u64, usize)> = HashMap::new();
         for comp in &self.size_comparisons {
-            let ext = comp.filename.rsplit('.').next().unwrap_or("unknown").to_lowercase();
+            let ext = comp
+                .filename
+                .rsplit('.')
+                .next()
+                .unwrap_or("unknown")
+                .to_lowercase();
             let entry = stats.entry(ext).or_insert((0, 0, 0));
             entry.0 += comp.original_size;
             entry.1 += comp.converted_size;
             entry.2 += 1;
         }
-        self.compression_stats = stats.into_iter()
+        self.compression_stats = stats
+            .into_iter()
             .map(|(format, (orig, conv, count))| CompressionStat {
                 format,
                 original_size: orig,
@@ -2384,15 +2665,21 @@ impl App {
     // New #7: File classification
     fn classify_files(&mut self) {
         let dest = PathBuf::from(&self.config.dest);
-        if !dest.exists() { return; }
+        if !dest.exists() {
+            return;
+        }
         for rule in &self.classify_rules {
             let target = dest.join(&rule.1);
-            if !target.exists() { let _ = fs::create_dir_all(&target); }
+            if !target.exists() {
+                let _ = fs::create_dir_all(&target);
+            }
         }
         if let Ok(entries) = fs::read_dir(&dest) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_file() { continue; }
+                if !path.is_file() {
+                    continue;
+                }
                 let name = path.file_name().unwrap().to_string_lossy().to_lowercase();
                 for rule in &self.classify_rules {
                     if name.contains(&rule.0.to_lowercase()) {
@@ -2409,7 +2696,9 @@ impl App {
     fn load_meta_files(&mut self) {
         self.meta_files.clear();
         let dest = PathBuf::from(&self.config.dest);
-        if !dest.exists() { return; }
+        if !dest.exists() {
+            return;
+        }
         if let Ok(entries) = fs::read_dir(&dest) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -2425,16 +2714,25 @@ impl App {
     fn export_history_csv(&self) -> Result<String, Box<dyn std::error::Error>> {
         let mut csv = String::from("timestamp,files_processed,errors,duration_secs\n");
         for entry in &self.history.entries {
-            csv.push_str(&format!("{},{},{},{}\n", entry.timestamp, entry.files_processed, entry.errors, entry.duration_secs));
+            csv.push_str(&format!(
+                "{},{},{},{}\n",
+                entry.timestamp, entry.files_processed, entry.errors, entry.duration_secs
+            ));
         }
-        let path = format!("io_tool_history_{}.csv", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let path = format!(
+            "io_tool_history_{}.csv",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        );
         fs::write(&path, &csv)?;
         Ok(path)
     }
 
     fn export_history_json(&self) -> Result<String, Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self.history)?;
-        let path = format!("io_tool_history_{}.json", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let path = format!(
+            "io_tool_history_{}.json",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        );
         fs::write(&path, &json)?;
         Ok(path)
     }
@@ -2482,7 +2780,10 @@ impl App {
     // New #19: Config import/export
     fn export_config(&self) -> Result<String, Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self.config)?;
-        let path = format!("io_tool_config_export_{}.json", chrono::Local::now().format("%Y%m%d_%H%M%S"));
+        let path = format!(
+            "io_tool_config_export_{}.json",
+            chrono::Local::now().format("%Y%m%d_%H%M%S")
+        );
         fs::write(&path, &json)?;
         Ok(path)
     }
@@ -2499,7 +2800,10 @@ impl App {
     fn scan_plugins(&mut self) {
         self.plugins.clear();
         let dir = PathBuf::from(&self.plugin_dir);
-        if !dir.exists() { let _ = fs::create_dir_all(&dir); return; }
+        if !dir.exists() {
+            let _ = fs::create_dir_all(&dir);
+            return;
+        }
         if let Ok(entries) = fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -2523,11 +2827,20 @@ impl App {
 
     // New #18: Auto parallelism adjustment
     fn adjust_parallelism(&mut self) {
-        if !self.auto_parallel { return; }
+        if !self.auto_parallel {
+            return;
+        }
         self.sys_info.refresh_all();
         let cpu_usage = if !self.sys_info.cpus().is_empty() {
-            self.sys_info.cpus().iter().map(|c| c.cpu_usage() as f64).sum::<f64>() / self.sys_info.cpus().len() as f64
-        } else { 0.0 };
+            self.sys_info
+                .cpus()
+                .iter()
+                .map(|c| c.cpu_usage() as f64)
+                .sum::<f64>()
+                / self.sys_info.cpus().len() as f64
+        } else {
+            0.0
+        };
         if cpu_usage < self.cpu_threshold * 0.7 && self.current_workers < 16 {
             self.current_workers += 1;
         } else if cpu_usage > self.cpu_threshold && self.current_workers > 1 {
@@ -2542,11 +2855,19 @@ impl App {
     // B3 #1: Generate ASCII art preview from image file
     fn generate_image_preview(&mut self, path: &str) {
         let buf = PathBuf::from(path);
-        if !buf.exists() { return; }
-        let name = buf.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        if !buf.exists() {
+            return;
+        }
+        let name = buf
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         // Simple ASCII art based on file size and type
         let size = fs::metadata(&buf).map(|m| m.len()).unwrap_or(0);
-        let ext = buf.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        let ext = buf
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default();
         let lines = vec![
             format!("┌{:─<40}┐", ""),
             format!("│ {:<38} │", name),
@@ -2574,7 +2895,9 @@ impl App {
     // B3 #3: Fuzzy search files
     fn fuzzy_search(&mut self) {
         self.fuzzy_results.clear();
-        if self.fuzzy_query.is_empty() { return; }
+        if self.fuzzy_query.is_empty() {
+            return;
+        }
         let query = self.fuzzy_query.to_lowercase();
         for item in &self.preview_items {
             let name = item.0.to_lowercase();
@@ -2583,8 +2906,16 @@ impl App {
             }
         }
         self.fuzzy_results.sort_by(|a, b| {
-            let a_score = if a.to_lowercase().starts_with(&query) { 0 } else { 1 };
-            let b_score = if b.to_lowercase().starts_with(&query) { 0 } else { 1 };
+            let a_score = if a.to_lowercase().starts_with(&query) {
+                0
+            } else {
+                1
+            };
+            let b_score = if b.to_lowercase().starts_with(&query) {
+                0
+            } else {
+                1
+            };
             a_score.cmp(&b_score)
         });
     }
@@ -2597,12 +2928,15 @@ impl App {
     // B3 #9: Add recent file
     fn add_recent_file(&mut self, path: String, file_type: String, size: u64) {
         self.recent_files.retain(|r| r.path != path);
-        self.recent_files.insert(0, RecentFile {
-            path: path.clone(),
-            processed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-            file_type,
-            size,
-        });
+        self.recent_files.insert(
+            0,
+            RecentFile {
+                path: path.clone(),
+                processed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                file_type,
+                size,
+            },
+        );
         if self.recent_files.len() > 100 {
             self.recent_files.truncate(100);
         }
@@ -2610,7 +2944,11 @@ impl App {
 
     // B3 #10: Add tag to file
     fn add_file_tag(&mut self, pattern: String, tag: String) {
-        if let Some(ft) = self.file_tags.iter_mut().find(|f| f.file_pattern == pattern) {
+        if let Some(ft) = self
+            .file_tags
+            .iter_mut()
+            .find(|f| f.file_pattern == pattern)
+        {
             if !ft.tags.contains(&tag) {
                 ft.tags.push(tag);
             }
@@ -2626,17 +2964,24 @@ impl App {
     fn build_file_tree(&mut self) {
         self.file_tree.clear();
         let root = PathBuf::from(&self.config.dest);
-        if !root.exists() { return; }
+        if !root.exists() {
+            return;
+        }
         self.file_tree = self.build_tree_recursive(&root, 0, 3);
     }
 
-    fn build_tree_recursive(&self, dir: &PathBuf, depth: usize, max_depth: usize) -> Vec<FileTreeNode> {
-        if depth >= max_depth { return Vec::new(); }
+    fn build_tree_recursive(
+        &self,
+        dir: &PathBuf,
+        depth: usize,
+        max_depth: usize,
+    ) -> Vec<FileTreeNode> {
+        if depth >= max_depth {
+            return Vec::new();
+        }
         let mut nodes = Vec::new();
         if let Ok(entries) = fs::read_dir(dir) {
-            let mut dirs: Vec<_> = entries.flatten()
-                .filter(|e| e.path().is_dir())
-                .collect();
+            let mut dirs: Vec<_> = entries.flatten().filter(|e| e.path().is_dir()).collect();
             dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
             for entry in dirs {
                 let path = entry.path();
@@ -2651,8 +2996,13 @@ impl App {
                     children,
                 });
             }
-            let mut files: Vec<_> = fs::read_dir(dir).ok()
-                .map(|d| d.flatten().filter(|e| e.path().is_file()).collect::<Vec<_>>())
+            let mut files: Vec<_> = fs::read_dir(dir)
+                .ok()
+                .map(|d| {
+                    d.flatten()
+                        .filter(|e| e.path().is_file())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
             for entry in files.into_iter().take(20) {
@@ -2673,7 +3023,9 @@ impl App {
 
     // B3 #13: Preview rename pattern
     fn preview_rename_pattern(&mut self) {
-        if self.rename_patterns.is_empty() { return; }
+        if self.rename_patterns.is_empty() {
+            return;
+        }
         let pat = &mut self.rename_patterns[self.rename_selected];
         pat.preview.clear();
         self.rename_preview_items.clear();
@@ -2681,7 +3033,8 @@ impl App {
             let old_name = &item.0;
             let new_name = if pat.use_regex {
                 if let Ok(re) = regex_lite::Regex::new(&pat.pattern) {
-                    re.replace_all(old_name, pat.replacement.as_str()).to_string()
+                    re.replace_all(old_name, pat.replacement.as_str())
+                        .to_string()
                 } else {
                     old_name.clone()
                 }
@@ -2704,7 +3057,10 @@ impl App {
             self.timeline_entries.push(TimelineEntry {
                 timestamp: entry.timestamp.clone(),
                 event_type: "complete".into(),
-                description: format!("Processed {} files from {}", entry.files_processed, entry.source),
+                description: format!(
+                    "Processed {} files from {}",
+                    entry.files_processed, entry.source
+                ),
                 progress: 1.0,
             });
         }
@@ -2726,12 +3082,15 @@ impl App {
 
     // B3 #17: Add notification
     fn add_notification(&mut self, message: String, level: String) {
-        self.notifications.insert(0, Notification {
-            message,
-            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-            level,
-            read: false,
-        });
+        self.notifications.insert(
+            0,
+            Notification {
+                message,
+                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                level,
+                read: false,
+            },
+        );
         if self.notifications.len() > 200 {
             self.notifications.truncate(200);
         }
@@ -2748,7 +3107,8 @@ impl App {
             let label = item.label().to_lowercase();
             let desc = item.description().to_lowercase();
             if label.contains(&query) || desc.contains(&query) {
-                self.palette_results.push((format!("{} - {}", item.label(), item.description()), i));
+                self.palette_results
+                    .push((format!("{} - {}", item.label(), item.description()), i));
             }
         }
         if self.palette_selected >= self.palette_results.len() {
@@ -2758,14 +3118,22 @@ impl App {
 
     // B3 #19: Export report
     fn export_report(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let format = if self.report_format == 0 { "html" } else { "md" };
+        let format = if self.report_format == 0 {
+            "html"
+        } else {
+            "md"
+        };
         let mut report = String::new();
 
         if format == "html" {
             report.push_str("<!DOCTYPE html><html><head><title>io-tool Report</title>");
-            report.push_str("<style>body{font-family:monospace;background:#1a1a2e;color:#eee;padding:20px}");
+            report.push_str(
+                "<style>body{font-family:monospace;background:#1a1a2e;color:#eee;padding:20px}",
+            );
             report.push_str("table{border-collapse:collapse;width:100%}td,th{border:1px solid #444;padding:8px}");
-            report.push_str("th{background:#16213e}tr:nth-child(even){background:#0f3460}</style></head><body>");
+            report.push_str(
+                "th{background:#16213e}tr:nth-child(even){background:#0f3460}</style></head><body>",
+            );
             report.push_str("<h1>io-tool Processing Report</h1>");
         } else {
             report.push_str("# io-tool Processing Report\n\n");
@@ -2776,24 +3144,42 @@ impl App {
         let total_comp: u64 = self.history.entries.iter().map(|e| e.compressed_size).sum();
 
         if format == "html" {
-            report.push_str(&format!("<p>Total files: {} | Original: {} | Compressed: {}</p>",
-                total_files, format_size(total_orig), format_size(total_comp)));
+            report.push_str(&format!(
+                "<p>Total files: {} | Original: {} | Compressed: {}</p>",
+                total_files,
+                format_size(total_orig),
+                format_size(total_comp)
+            ));
             report.push_str("<table><tr><th>Date</th><th>Source</th><th>Files</th><th>Original</th><th>Compressed</th></tr>");
             for entry in &self.history.entries {
-                report.push_str(&format!("<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    entry.timestamp, entry.source, entry.files_processed,
-                    format_size(entry.original_size), format_size(entry.compressed_size)));
+                report.push_str(&format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    entry.timestamp,
+                    entry.source,
+                    entry.files_processed,
+                    format_size(entry.original_size),
+                    format_size(entry.compressed_size)
+                ));
             }
             report.push_str("</table></body></html>");
         } else {
-            report.push_str(&format!("Total files: {} | Original: {} | Compressed: {}\n\n",
-                total_files, format_size(total_orig), format_size(total_comp)));
+            report.push_str(&format!(
+                "Total files: {} | Original: {} | Compressed: {}\n\n",
+                total_files,
+                format_size(total_orig),
+                format_size(total_comp)
+            ));
             report.push_str("| Date | Source | Files | Original | Compressed |\n");
             report.push_str("|------|--------|-------|----------|------------|\n");
             for entry in &self.history.entries {
-                report.push_str(&format!("| {} | {} | {} | {} | {} |\n",
-                    entry.timestamp, entry.source, entry.files_processed,
-                    format_size(entry.original_size), format_size(entry.compressed_size)));
+                report.push_str(&format!(
+                    "| {} | {} | {} | {} | {} |\n",
+                    entry.timestamp,
+                    entry.source,
+                    entry.files_processed,
+                    format_size(entry.original_size),
+                    format_size(entry.compressed_size)
+                ));
             }
         }
 
@@ -2832,19 +3218,26 @@ impl App {
     fn scan_similar_images(&mut self) {
         self.similar_groups.clear();
         let dest_path = PathBuf::from(&self.config.dest);
-        if !dest_path.exists() { return; }
+        if !dest_path.exists() {
+            return;
+        }
 
-        let files: Vec<_> = fs::read_dir(&dest_path).ok()
-            .map(|d| d.flatten()
-                .filter(|e| {
-                    let p = e.path();
-                    p.is_file() && is_image_file(&p)
-                })
-                .collect::<Vec<_>>())
+        let files: Vec<_> = fs::read_dir(&dest_path)
+            .ok()
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| {
+                        let p = e.path();
+                        p.is_file() && is_image_file(&p)
+                    })
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
 
         let total = files.len();
-        if total == 0 { return; }
+        if total == 0 {
+            return;
+        }
 
         // Calculate hashes for all images
         let mut hashes: Vec<(String, u64, u64)> = Vec::new(); // (path, ahash, dhash)
@@ -2860,7 +3253,9 @@ impl App {
         // Group by similarity using aHash
         let mut used = vec![false; hashes.len()];
         for i in 0..hashes.len() {
-            if used[i] { continue; }
+            if used[i] {
+                continue;
+            }
             let mut group_files = vec![(
                 hashes[i].0.clone(),
                 fs::metadata(&hashes[i].0).map(|m| m.len()).unwrap_or(0),
@@ -2868,7 +3263,9 @@ impl App {
             used[i] = true;
 
             for j in (i + 1)..hashes.len() {
-                if used[j] { continue; }
+                if used[j] {
+                    continue;
+                }
                 let dist = hamming_distance(hashes[i].1, hashes[j].1);
                 if dist <= self.similar_threshold {
                     group_files.push((
@@ -2891,7 +3288,9 @@ impl App {
         // Also group by dHash for remaining ungrouped files
         used = vec![false; hashes.len()];
         for i in 0..hashes.len() {
-            if used[i] { continue; }
+            if used[i] {
+                continue;
+            }
             let mut group_files = vec![(
                 hashes[i].0.clone(),
                 fs::metadata(&hashes[i].0).map(|m| m.len()).unwrap_or(0),
@@ -2899,7 +3298,9 @@ impl App {
             used[i] = true;
 
             for j in (i + 1)..hashes.len() {
-                if used[j] { continue; }
+                if used[j] {
+                    continue;
+                }
                 let dist = hamming_distance(hashes[i].2, hashes[j].2);
                 if dist <= self.similar_threshold {
                     // Check if already in aHash group
@@ -2926,7 +3327,8 @@ impl App {
             }
         }
 
-        self.similar_groups.sort_by(|a, b| b.files.len().cmp(&a.files.len()));
+        self.similar_groups
+            .sort_by(|a, b| b.files.len().cmp(&a.files.len()));
     }
 }
 
@@ -2961,12 +3363,19 @@ fn run_full_process(
 
     // Check for interruption
     let check_interrupt = || -> bool {
-        if let Ok(val) = is_interrupted.lock() { *val } else { false }
+        if let Ok(val) = is_interrupted.lock() {
+            *val
+        } else {
+            false
+        }
     };
 
     // STEP 1: Move files
     if step_enabled[0] {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         step_num += 1;
         set_prog(0.0);
         set_step_prog(0, 0.0);
@@ -2986,7 +3395,8 @@ fn run_full_process(
         // Twitter source
         let twitter_path = PathBuf::from(&config.twitter_src);
         if twitter_path.exists() {
-            let files: Vec<_> = fs::read_dir(&twitter_path).ok()
+            let files: Vec<_> = fs::read_dir(&twitter_path)
+                .ok()
                 .map(|d| d.flatten().filter(|e| e.path().is_file()).collect())
                 .unwrap_or_default();
             let total = files.len();
@@ -2996,30 +3406,52 @@ fn run_full_process(
                 if !dry_run {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
-                        add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
+                        add_undo(
+                            entry.path().to_string_lossy().to_string(),
+                            dest_path.to_string_lossy().to_string(),
+                        );
                         sources_moved += 1;
                     }
                 } else {
                     sources_moved += 1;
                 }
             }
-            log(format!("  Twitter: {} files {}", sources_moved, if dry_run { "would move" } else { "moved" }));
+            log(format!(
+                "  Twitter: {} files {}",
+                sources_moved,
+                if dry_run { "would move" } else { "moved" }
+            ));
         } else {
-            log(format!("  Twitter source not found: {}", config.twitter_src));
+            log(format!(
+                "  Twitter source not found: {}",
+                config.twitter_src
+            ));
         }
 
         // Downloads source
         let dl_path = PathBuf::from(&config.download_src);
         if dl_path.exists() {
             let cutoff = Utc::now().timestamp() - (config.days_to_check * 24 * 60 * 60);
-            let files: Vec<_> = fs::read_dir(&dl_path).ok()
-                .map(|d| d.flatten().filter(|e| {
-                    let p = e.path();
-                    p.is_file() && {
-                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
-                        config.image_extensions.iter().any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
-                    }
-                }).collect::<Vec<_>>())
+            let files: Vec<_> = fs::read_dir(&dl_path)
+                .ok()
+                .map(|d| {
+                    d.flatten()
+                        .filter(|e| {
+                            let p = e.path();
+                            p.is_file() && {
+                                let ext = p
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                config
+                                    .image_extensions
+                                    .iter()
+                                    .any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             let total = files.len();
             let mut dl_moved = 0usize;
@@ -3034,7 +3466,10 @@ fn run_full_process(
                             if !dry_run {
                                 let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                                 if fs::rename(entry.path(), &dest_path).is_ok() {
-                                    add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
+                                    add_undo(
+                                        entry.path().to_string_lossy().to_string(),
+                                        dest_path.to_string_lossy().to_string(),
+                                    );
                                     dl_moved += 1;
                                 }
                             } else {
@@ -3044,14 +3479,19 @@ fn run_full_process(
                     }
                 }
             }
-            log(format!("  Downloads: {} files {}", dl_moved, if dry_run { "would move" } else { "moved" }));
+            log(format!(
+                "  Downloads: {} files {}",
+                dl_moved,
+                if dry_run { "would move" } else { "moved" }
+            ));
             sources_moved += dl_moved;
         }
 
         // X_Images subfolder
         let x_path = dl_path.join("X_Images");
         if x_path.exists() {
-            let files: Vec<_> = fs::read_dir(&x_path).ok()
+            let files: Vec<_> = fs::read_dir(&x_path)
+                .ok()
                 .map(|d| d.flatten().filter(|e| e.path().is_file()).collect())
                 .unwrap_or_default();
             let mut x_moved = 0usize;
@@ -3059,29 +3499,48 @@ fn run_full_process(
                 if !dry_run {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
-                        add_undo(entry.path().to_string_lossy().to_string(), dest_path.to_string_lossy().to_string());
+                        add_undo(
+                            entry.path().to_string_lossy().to_string(),
+                            dest_path.to_string_lossy().to_string(),
+                        );
                         x_moved += 1;
                     }
                 } else {
                     x_moved += 1;
                 }
             }
-            if !dry_run { let _ = fs::remove_dir_all(&x_path); }
-            log(format!("  X_Images: {} files {}", x_moved, if dry_run { "would move" } else { "moved" }));
+            if !dry_run {
+                let _ = fs::remove_dir_all(&x_path);
+            }
+            log(format!(
+                "  X_Images: {} files {}",
+                x_moved,
+                if dry_run { "would move" } else { "moved" }
+            ));
             sources_moved += x_moved;
         }
 
         total_processed += sources_moved;
         inc_files(sources_moved);
         set_step_prog(0, 1.0);
-        log(format!("  ✓ Step 1 complete: {} files {}", sources_moved, if dry_run { "would move" } else { "moved" }));
+        log(format!(
+            "  ✓ Step 1 complete: {} files {}",
+            sources_moved,
+            if dry_run { "would move" } else { "moved" }
+        ));
     }
 
     // STEP 2: Remove duplicates
     if step_enabled[1] {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         step_num += 1;
-        set_step(format!("STEP {}/{}: Removing duplicates...", step_num, total_steps));
+        set_step(format!(
+            "STEP {}/{}: Removing duplicates...",
+            step_num, total_steps
+        ));
         set_prog(0.2);
         set_step_prog(1, 0.0);
         log("[STEP 2] Removing duplicates (SHA256)...".into());
@@ -3093,8 +3552,12 @@ fn run_full_process(
         let total = files.len();
 
         // Parallel hash computation using rayon
-        set_detail(format!("Computing hashes for {} files (parallel)...", total));
-        let hashes: Vec<(PathBuf, Option<String>)> = files.par_iter()
+        set_detail(format!(
+            "Computing hashes for {} files (parallel)...",
+            total
+        ));
+        let hashes: Vec<(PathBuf, Option<String>)> = files
+            .par_iter()
             .map(|entry| {
                 let path = entry.path();
                 let hash = calculate_sha256(&path).ok();
@@ -3123,19 +3586,31 @@ fn run_full_process(
                         }
                     }
                 }
-                None => { add_error(format!("Step 2 hash failed: {}", path.display())); }
+                None => {
+                    add_error(format!("Step 2 hash failed: {}", path.display()));
+                }
             }
         }
         total_removed += removed;
         set_step_prog(1, 1.0);
-        log(format!("  ✓ Removed {} duplicates {}", removed, if dry_run { "(dry run)" } else { "" }));
+        log(format!(
+            "  ✓ Removed {} duplicates {}",
+            removed,
+            if dry_run { "(dry run)" } else { "" }
+        ));
     }
 
     // STEP 3: Remove files in REF
     if step_enabled[2] {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         step_num += 1;
-        set_step(format!("STEP {}/{}: Removing reference duplicates...", step_num, total_steps));
+        set_step(format!(
+            "STEP {}/{}: Removing reference duplicates...",
+            step_num, total_steps
+        ));
         set_prog(0.4);
         set_step_prog(2, 0.0);
         log("[STEP 3] Removing files that exist in reference...".into());
@@ -3150,8 +3625,12 @@ fn run_full_process(
             let ref_total = ref_files.len();
 
             // Parallel hash computation for reference files
-            set_detail(format!("Building ref DB: {} files (parallel)...", ref_total));
-            let ref_hashes_vec: Vec<String> = ref_files.par_iter()
+            set_detail(format!(
+                "Building ref DB: {} files (parallel)...",
+                ref_total
+            ));
+            let ref_hashes_vec: Vec<String> = ref_files
+                .par_iter()
                 .filter_map(|entry| calculate_sha256(&entry.path().to_path_buf()).ok())
                 .collect();
             set_step_prog(2, 0.5);
@@ -3188,27 +3667,48 @@ fn run_full_process(
         }
         total_removed += removed;
         set_step_prog(2, 1.0);
-        log(format!("  ✓ Removed {} reference duplicates {}", removed, if dry_run { "(dry run)" } else { "" }));
+        log(format!(
+            "  ✓ Removed {} reference duplicates {}",
+            removed,
+            if dry_run { "(dry run)" } else { "" }
+        ));
     }
 
     // STEP 4: Rename + clean
     if step_enabled[3] {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         step_num += 1;
-        set_step(format!("STEP {}/{}: Renaming files...", step_num, total_steps));
+        set_step(format!(
+            "STEP {}/{}: Renaming files...",
+            step_num, total_steps
+        ));
         set_prog(0.6);
         set_step_prog(3, 0.0);
         log("[STEP 4] Renaming files...".into());
 
         let files: Vec<_> = fs::read_dir(&config.dest)
             .ok()
-            .map(|d| d.flatten().filter(|e| {
-                let p = e.path();
-                p.is_file() && {
-                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
-                    config.image_extensions.iter().any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
-                }
-            }).collect())
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| {
+                        let p = e.path();
+                        p.is_file() && {
+                            let ext = p
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("")
+                                .to_string();
+                            config
+                                .image_extensions
+                                .iter()
+                                .any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
+                        }
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         let total = files.len();
         let mut renamed = 0;
@@ -3233,7 +3733,10 @@ fn run_full_process(
                         let new_path = path.parent().unwrap().join(&final_name);
                         if !dry_run {
                             if fs::rename(&path, &new_path).is_ok() {
-                                add_undo(path.to_string_lossy().to_string(), new_path.to_string_lossy().to_string());
+                                add_undo(
+                                    path.to_string_lossy().to_string(),
+                                    new_path.to_string_lossy().to_string(),
+                                );
                                 renamed += 1;
                             }
                         } else {
@@ -3244,7 +3747,11 @@ fn run_full_process(
             }
         }
         total_processed += renamed;
-        log(format!("  ✓ Renamed {} files by timestamp {}", renamed, if dry_run { "(dry run)" } else { "" }));
+        log(format!(
+            "  ✓ Renamed {} files by timestamp {}",
+            renamed,
+            if dry_run { "(dry run)" } else { "" }
+        ));
 
         // Clean filenames
         set_detail("Cleaning filenames...".into());
@@ -3252,16 +3759,28 @@ fn run_full_process(
         let clean_count = clean_filenames(&config.dest, dry_run, add_error);
         total_processed += clean_count;
         set_step_prog(3, 1.0);
-        log(format!("  ✓ Cleaned {} filenames {}", clean_count, if dry_run { "(dry run)" } else { "" }));
+        log(format!(
+            "  ✓ Cleaned {} filenames {}",
+            clean_count,
+            if dry_run { "(dry run)" } else { "" }
+        ));
     }
 
     // STEP 4.5: Resize images (if enabled)
     if config.resize_enabled {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         set_detail("Resizing images...".into());
         log("[RESIZE] Resizing images...".into());
         if !dry_run {
-            let resized = resize_images(&config.dest, config.resize_max_width, config.resize_max_height, &log);
+            let resized = resize_images(
+                &config.dest,
+                config.resize_max_width,
+                config.resize_max_height,
+                &log,
+            );
             log(format!("  ✓ Resized {} images", resized));
         } else {
             log("  ✓ Resize skipped (dry run)".into());
@@ -3270,7 +3789,10 @@ fn run_full_process(
 
     // STEP 4.6: Watermark (if enabled)
     if config.watermark_enabled && !config.watermark_text.is_empty() {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         set_detail("Adding watermark...".into());
         log("[WATERMARK] Adding watermark overlay...".into());
         if !dry_run {
@@ -3283,9 +3805,15 @@ fn run_full_process(
 
     // STEP 5: Convert to JXL
     if step_enabled[4] {
-        if check_interrupt() { log("=== INTERRUPTED BY USER ===".into()); return; }
+        if check_interrupt() {
+            log("=== INTERRUPTED BY USER ===".into());
+            return;
+        }
         step_num += 1;
-        set_step(format!("STEP {}/{}: Converting to JXL...", step_num, total_steps));
+        set_step(format!(
+            "STEP {}/{}: Converting to JXL...",
+            step_num, total_steps
+        ));
         set_prog(0.8);
         set_step_prog(4, 0.0);
         set_detail("Running JXL conversion...".into());
@@ -3293,7 +3821,10 @@ fn run_full_process(
         if !dry_run {
             match convert_to_jxl(&config.dest) {
                 Ok(()) => log("  ✓ JXL conversion completed".into()),
-                Err(e) => { log(format!("  Error: {}", e)); add_error(format!("Step 5: {}", e)); }
+                Err(e) => {
+                    log(format!("  Error: {}", e));
+                    add_error(format!("Step 5: {}", e));
+                }
             }
         } else {
             log("  ✓ JXL conversion skipped (dry run)".into());
@@ -3304,8 +3835,12 @@ fn run_full_process(
     set_prog(1.0);
     set_detail("Done!".into());
     set_step("All steps completed!".into());
-    log(format!("=== {}COMPLETED (processed: {}, removed: {}) ===",
-        if dry_run { "DRY RUN " } else { "" }, total_processed, total_removed));
+    log(format!(
+        "=== {}COMPLETED (processed: {}, removed: {}) ===",
+        if dry_run { "DRY RUN " } else { "" },
+        total_processed,
+        total_removed
+    ));
 }
 
 fn clean_filenames(dest: &str, dry_run: bool, add_error: &dyn Fn(String)) -> usize {
@@ -3387,8 +3922,12 @@ fn run_with_progress(
                             let datetime: chrono::DateTime<chrono::Local> = modified.into();
                             let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
                             Some(format!("{}.{}", timestamp, ext))
-                        } else { None }
-                    } else { None }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
             }
             _ => None,
@@ -3399,7 +3938,10 @@ fn run_with_progress(
                 let new_path = path.parent().unwrap().join(&final_name);
                 if !dry_run {
                     match fs::rename(&path, &new_path) {
-                        Ok(()) => { count += 1; inc_files(1); }
+                        Ok(()) => {
+                            count += 1;
+                            inc_files(1);
+                        }
                         Err(e) => add_error(format!("{}: {}", path.display(), e)),
                     }
                 } else {
@@ -3450,14 +3992,36 @@ fn show_cli_menu() {
             let undo_log = Arc::new(Mutex::new(UndoLog::default()));
             let add_undo = |old: String, new: String| {
                 if let Ok(mut log) = undo_log.lock() {
-                    log.entries.push(UndoEntry { old_path: old, new_path: new });
+                    log.entries.push(UndoEntry {
+                        old_path: old,
+                        new_path: new,
+                    });
                 }
             };
-            run_full_process(&config, &step_enabled, false, &is_interrupted, &log, &set_prog, &set_detail, &set_step, &add_error, &set_step_prog, &inc_files, &add_undo);
+            run_full_process(
+                &config,
+                &step_enabled,
+                false,
+                &is_interrupted,
+                &log,
+                &set_prog,
+                &set_detail,
+                &set_step,
+                &add_error,
+                &set_step_prog,
+                &inc_files,
+                &add_undo,
+            );
         }
-        2 => { let _ = rename_remove_underscore_parens(&config.dest); }
-        3 => { let _ = rename_by_timestamp(&config.dest); }
-        4 => { let _ = convert_to_jxl(&config.dest); }
+        2 => {
+            let _ = rename_remove_underscore_parens(&config.dest);
+        }
+        3 => {
+            let _ = rename_by_timestamp(&config.dest);
+        }
+        4 => {
+            let _ = convert_to_jxl(&config.dest);
+        }
         5 => hash_cache_db(),
         _ => println!("Invalid option"),
     }
@@ -3500,7 +4064,12 @@ fn main() -> Result<()> {
     let result = run_app(&mut terminal, &mut app);
 
     disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture).ok();
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )
+    .ok();
     terminal.show_cursor().ok();
 
     if let Err(err) = result {
@@ -3516,10 +4085,7 @@ fn main() -> Result<()> {
 // TUI Event Loop
 // ============================================================
 
-fn run_app(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -3589,10 +4155,16 @@ fn run_app(
                     // Feature #14: Help screen
                     if app.state == AppState::Help {
                         match key.code {
-                            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => app.state = AppState::Menu,
-                            KeyCode::Up | KeyCode::Char('k') => app.help_scroll = app.help_scroll.saturating_sub(1),
+                            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                                app.state = AppState::Menu
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                app.help_scroll = app.help_scroll.saturating_sub(1)
+                            }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.help_scroll < 30 { app.help_scroll += 1; }
+                                if app.help_scroll < 30 {
+                                    app.help_scroll += 1;
+                                }
                             }
                             KeyCode::PageUp => app.help_scroll = app.help_scroll.saturating_sub(10),
                             KeyCode::PageDown => app.help_scroll = (app.help_scroll + 10).min(30),
@@ -3631,13 +4203,33 @@ fn run_app(
                             KeyCode::Char('s') if app.state == AppState::Menu => {
                                 // Cycle sort field
                                 app.sort_config = match app.sort_config.field {
-                                    SortField::Name => SortConfig { field: SortField::Size, ascending: true },
-                                    SortField::Size => SortConfig { field: SortField::Date, ascending: true },
-                                    SortField::Date => SortConfig { field: SortField::Type, ascending: true },
-                                    SortField::Type => SortConfig { field: SortField::Name, ascending: true },
+                                    SortField::Name => SortConfig {
+                                        field: SortField::Size,
+                                        ascending: true,
+                                    },
+                                    SortField::Size => SortConfig {
+                                        field: SortField::Date,
+                                        ascending: true,
+                                    },
+                                    SortField::Date => SortConfig {
+                                        field: SortField::Type,
+                                        ascending: true,
+                                    },
+                                    SortField::Type => SortConfig {
+                                        field: SortField::Name,
+                                        ascending: true,
+                                    },
                                 };
                                 if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Sort: {:?} ({})", app.sort_config.field, if app.sort_config.ascending { "asc" } else { "desc" }));
+                                    logs.push(format!(
+                                        "Sort: {:?} ({})",
+                                        app.sort_config.field,
+                                        if app.sort_config.ascending {
+                                            "asc"
+                                        } else {
+                                            "desc"
+                                        }
+                                    ));
                                 }
                                 continue;
                             }
@@ -3697,20 +4289,33 @@ fn run_app(
                                 return Ok(());
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.selected > 0 { app.selected -= 1; }
+                                if app.selected > 0 {
+                                    app.selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.selected < app.menu_items.len() - 1 { app.selected += 1; }
+                                if app.selected < app.menu_items.len() - 1 {
+                                    app.selected += 1;
+                                }
                             }
                             KeyCode::Enter | KeyCode::Char(' ') => {
                                 let item = app.menu_items[app.selected];
                                 match item {
                                     MenuItem::FullProcess => app.state = AppState::StepSelect,
                                     MenuItem::Settings => app.state = AppState::Settings,
-                                    MenuItem::BatchQueue => { app.batch_selected = 0; app.state = AppState::BatchQueue; }
-                                    MenuItem::Profiles => { app.profile_selected = 0; app.state = AppState::Profiles; }
+                                    MenuItem::BatchQueue => {
+                                        app.batch_selected = 0;
+                                        app.state = AppState::BatchQueue;
+                                    }
+                                    MenuItem::Profiles => {
+                                        app.profile_selected = 0;
+                                        app.state = AppState::Profiles;
+                                    }
                                     MenuItem::WatchMode => app.state = AppState::WatchMode,
-                                    MenuItem::Statistics => { app.stats_scroll = 0; app.state = AppState::Stats; }
+                                    MenuItem::Statistics => {
+                                        app.stats_scroll = 0;
+                                        app.state = AppState::Stats;
+                                    }
                                     MenuItem::Duplicates => {
                                         app.scan_duplicates();
                                         app.dup_group_selected = 0;
@@ -3748,7 +4353,10 @@ fn run_app(
                                     }
                                     // Batch 3 dispatch
                                     MenuItem::ImagePreview => {
-                                        {let dest = app.config.dest.clone(); app.generate_image_preview(&dest);}
+                                        {
+                                            let dest = app.config.dest.clone();
+                                            app.generate_image_preview(&dest);
+                                        }
                                         app.state = AppState::ImagePreview;
                                     }
                                     MenuItem::FuzzyFinder => {
@@ -3831,10 +4439,19 @@ fn run_app(
                                     match item {
                                         MenuItem::FullProcess => app.state = AppState::StepSelect,
                                         MenuItem::Settings => app.state = AppState::Settings,
-                                        MenuItem::BatchQueue => { app.batch_selected = 0; app.state = AppState::BatchQueue; }
-                                        MenuItem::Profiles => { app.profile_selected = 0; app.state = AppState::Profiles; }
+                                        MenuItem::BatchQueue => {
+                                            app.batch_selected = 0;
+                                            app.state = AppState::BatchQueue;
+                                        }
+                                        MenuItem::Profiles => {
+                                            app.profile_selected = 0;
+                                            app.state = AppState::Profiles;
+                                        }
                                         MenuItem::WatchMode => app.state = AppState::WatchMode,
-                                        MenuItem::Statistics => { app.stats_scroll = 0; app.state = AppState::Stats; }
+                                        MenuItem::Statistics => {
+                                            app.stats_scroll = 0;
+                                            app.state = AppState::Stats;
+                                        }
                                         MenuItem::Duplicates => {
                                             app.scan_duplicates();
                                             app.dup_group_selected = 0;
@@ -3851,7 +4468,9 @@ fn run_app(
                                         }
                                         MenuItem::Presets => app.state = AppState::Presets,
                                         MenuItem::Scheduler => app.state = AppState::Scheduler,
-                                        MenuItem::HistoryExport => app.state = AppState::HistoryExport,
+                                        MenuItem::HistoryExport => {
+                                            app.state = AppState::HistoryExport
+                                        }
                                         MenuItem::ThemeEditor => {
                                             app.load_custom_themes();
                                             app.state = AppState::ThemeEditor;
@@ -3860,7 +4479,9 @@ fn run_app(
                                             app.build_compression_stats();
                                             app.state = AppState::CompressionGraph;
                                         }
-                                        MenuItem::FileClassify => app.state = AppState::FileClassify,
+                                        MenuItem::FileClassify => {
+                                            app.state = AppState::FileClassify
+                                        }
                                         MenuItem::MetaEdit => {
                                             app.load_meta_files();
                                             app.state = AppState::MetaEdit;
@@ -3872,7 +4493,10 @@ fn run_app(
                                         }
                                         // Batch 3 dispatch (number keys)
                                         MenuItem::ImagePreview => {
-                                            {let dest = app.config.dest.clone(); app.generate_image_preview(&dest);}
+                                            {
+                                                let dest = app.config.dest.clone();
+                                                app.generate_image_preview(&dest);
+                                            }
                                             app.state = AppState::ImagePreview;
                                         }
                                         MenuItem::FuzzyFinder => {
@@ -3951,10 +4575,14 @@ fn run_app(
                         AppState::StepSelect => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.step_selected > 0 { app.step_selected -= 1; }
+                                if app.step_selected > 0 {
+                                    app.step_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.step_selected < FULL_STEP_LABELS.len() - 1 { app.step_selected += 1; }
+                                if app.step_selected < FULL_STEP_LABELS.len() - 1 {
+                                    app.step_selected += 1;
+                                }
                             }
                             KeyCode::Char(' ') => {
                                 let i = app.step_selected;
@@ -3962,7 +4590,9 @@ fn run_app(
                             }
                             KeyCode::Char('a') => {
                                 let all_on = app.step_enabled.iter().all(|&e| e);
-                                for e in app.step_enabled.iter_mut() { *e = !all_on; }
+                                for e in app.step_enabled.iter_mut() {
+                                    *e = !all_on;
+                                }
                             }
                             KeyCode::Enter => {
                                 app.confirm_action = Some(ConfirmAction::StartProcessing);
@@ -3985,10 +4615,13 @@ fn run_app(
                                 app.preview_scroll = app.preview_scroll.saturating_sub(10);
                             }
                             KeyCode::PageDown => {
-                                app.preview_scroll = (app.preview_scroll + 10).min(app.preview_items.len().saturating_sub(1));
+                                app.preview_scroll = (app.preview_scroll + 10)
+                                    .min(app.preview_items.len().saturating_sub(1));
                             }
                             KeyCode::Home => app.preview_scroll = 0,
-                            KeyCode::End => app.preview_scroll = app.preview_items.len().saturating_sub(1),
+                            KeyCode::End => {
+                                app.preview_scroll = app.preview_items.len().saturating_sub(1)
+                            }
                             KeyCode::Enter => {
                                 app.start_processing();
                             }
@@ -4005,13 +4638,18 @@ fn run_app(
                                 // Allow viewing log during processing
                             }
                             if !*app.is_processing.lock().unwrap() {
-                                let elapsed = app.start_time.lock().unwrap()
+                                let elapsed = app
+                                    .start_time
+                                    .lock()
+                                    .unwrap()
                                     .map(|t| t.elapsed().as_secs_f64())
                                     .unwrap_or(0.0);
                                 let errs = app.errors.lock().unwrap().len();
                                 let processed = *app.files_processed.lock().unwrap();
                                 let entry = HistoryEntry {
-                                    timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                    timestamp: chrono::Local::now()
+                                        .format("%Y-%m-%d %H:%M:%S")
+                                        .to_string(),
                                     action: "Full Process".into(),
                                     source: app.config.twitter_src.clone(),
                                     files_processed: processed,
@@ -4028,7 +4666,10 @@ fn run_app(
                             }
                         }
                         AppState::Done => match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => { app.save_state(); return Ok(()); }
+                            KeyCode::Char('q') | KeyCode::Esc => {
+                                app.save_state();
+                                return Ok(());
+                            }
                             KeyCode::Char('r') | KeyCode::Enter => {
                                 app.state = AppState::Menu;
                             }
@@ -4041,10 +4682,14 @@ fn run_app(
                         AppState::Settings => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.settings_selected > 0 { app.settings_selected -= 1; }
+                                if app.settings_selected > 0 {
+                                    app.settings_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.settings_selected < 7 { app.settings_selected += 1; }
+                                if app.settings_selected < 7 {
+                                    app.settings_selected += 1;
+                                }
                             }
                             KeyCode::Enter => {
                                 let _ = app.config.save();
@@ -4056,10 +4701,14 @@ fn run_app(
                         AppState::BatchQueue => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.batch_selected > 0 { app.batch_selected -= 1; }
+                                if app.batch_selected > 0 {
+                                    app.batch_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.batch_selected < app.batch_queue.len() { app.batch_selected += 1; }
+                                if app.batch_selected < app.batch_queue.len() {
+                                    app.batch_selected += 1;
+                                }
                             }
                             KeyCode::Char('a') => {
                                 app.batch_adding = true;
@@ -4068,7 +4717,9 @@ fn run_app(
                             KeyCode::Char('d') => {
                                 if app.batch_selected < app.batch_queue.len() {
                                     app.batch_queue.remove(app.batch_selected);
-                                    if app.batch_selected > 0 { app.batch_selected -= 1; }
+                                    if app.batch_selected > 0 {
+                                        app.batch_selected -= 1;
+                                    }
                                 }
                             }
                             KeyCode::Enter => {
@@ -4084,7 +4735,8 @@ fn run_app(
                                     app.batch_input.clear();
                                 } else if !app.batch_queue.is_empty() {
                                     // Process batch queue - collect paths first to avoid borrow issues
-                                    let paths: Vec<String> = app.batch_queue.iter().map(|j| j.path.clone()).collect();
+                                    let paths: Vec<String> =
+                                        app.batch_queue.iter().map(|j| j.path.clone()).collect();
                                     for (i, path) in paths.iter().enumerate() {
                                         if let Some(job) = app.batch_queue.get_mut(i) {
                                             job.status = "processing".into();
@@ -4111,17 +4763,23 @@ fn run_app(
                         AppState::DuplicateGroups => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.dup_group_selected > 0 { app.dup_group_selected -= 1; }
+                                if app.dup_group_selected > 0 {
+                                    app.dup_group_selected -= 1;
+                                }
                                 app.dup_file_selected = 0;
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.dup_group_selected < app.duplicate_groups.len().saturating_sub(1) {
+                                if app.dup_group_selected
+                                    < app.duplicate_groups.len().saturating_sub(1)
+                                {
                                     app.dup_group_selected += 1;
                                 }
                                 app.dup_file_selected = 0;
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
-                                if app.dup_file_selected > 0 { app.dup_file_selected -= 1; }
+                                if app.dup_file_selected > 0 {
+                                    app.dup_file_selected -= 1;
+                                }
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
                                 if app.dup_group_selected < app.duplicate_groups.len() {
@@ -4133,7 +4791,8 @@ fn run_app(
                             }
                             KeyCode::Char(' ') => {
                                 if app.dup_group_selected < app.duplicate_groups.len() {
-                                    app.duplicate_groups[app.dup_group_selected].selected = app.dup_file_selected;
+                                    app.duplicate_groups[app.dup_group_selected].selected =
+                                        app.dup_file_selected;
                                 }
                             }
                             KeyCode::Char('x') => {
@@ -4147,7 +4806,11 @@ fn run_app(
                                         }
                                     }
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Removed {} duplicates (kept #{})", group.files.len() - 1, keep + 1));
+                                        logs.push(format!(
+                                            "Removed {} duplicates (kept #{})",
+                                            group.files.len() - 1,
+                                            keep + 1
+                                        ));
                                     }
                                 }
                             }
@@ -4156,9 +4819,13 @@ fn run_app(
                         // Feature #8: Stats
                         AppState::Stats => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
-                            KeyCode::Up | KeyCode::Char('k') => app.stats_scroll = app.stats_scroll.saturating_sub(1),
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                app.stats_scroll = app.stats_scroll.saturating_sub(1)
+                            }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.stats_scroll < 20 { app.stats_scroll += 1; }
+                                if app.stats_scroll < 20 {
+                                    app.stats_scroll += 1;
+                                }
                             }
                             _ => {}
                         },
@@ -4166,10 +4833,14 @@ fn run_app(
                         AppState::Profiles => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.profile_selected > 0 { app.profile_selected -= 1; }
+                                if app.profile_selected > 0 {
+                                    app.profile_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.profile_selected < app.config.profiles.len() + 1 { app.profile_selected += 1; }
+                                if app.profile_selected < app.config.profiles.len() + 1 {
+                                    app.profile_selected += 1;
+                                }
                             }
                             KeyCode::Char('a') => {
                                 app.profile_adding = true;
@@ -4185,7 +4856,10 @@ fn run_app(
                                 } else if app.profile_selected < app.config.profiles.len() {
                                     app.load_profile(app.profile_selected);
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Loaded profile: {}", app.config.profiles[app.profile_selected].name));
+                                        logs.push(format!(
+                                            "Loaded profile: {}",
+                                            app.config.profiles[app.profile_selected].name
+                                        ));
                                     }
                                 } else if app.profile_selected == app.config.profiles.len() {
                                     // Clear history option
@@ -4203,7 +4877,9 @@ fn run_app(
                                 if app.profile_selected < app.config.profiles.len() {
                                     app.config.profiles.remove(app.profile_selected);
                                     let _ = app.config.save();
-                                    if app.profile_selected > 0 { app.profile_selected -= 1; }
+                                    if app.profile_selected > 0 {
+                                        app.profile_selected -= 1;
+                                    }
                                 }
                             }
                             KeyCode::Char(c) if app.profile_adding => {
@@ -4218,10 +4894,14 @@ fn run_app(
                         AppState::JxlSettings => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.settings_selected > 0 { app.settings_selected -= 1; }
+                                if app.settings_selected > 0 {
+                                    app.settings_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.settings_selected < 2 { app.settings_selected += 1; }
+                                if app.settings_selected < 2 {
+                                    app.settings_selected += 1;
+                                }
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
                                 if app.settings_selected == 0 && app.config.jxl_quality > 1 {
@@ -4278,45 +4958,81 @@ fn run_app(
                         AppState::FilterSort => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.filter_selected > 0 { app.filter_selected -= 1; }
+                                if app.filter_selected > 0 {
+                                    app.filter_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.filter_selected < 4 { app.filter_selected += 1; }
+                                if app.filter_selected < 4 {
+                                    app.filter_selected += 1;
+                                }
                             }
                             KeyCode::Enter => {
                                 let _ = app.config.save();
                                 app.state = AppState::Menu;
                             }
-                            KeyCode::Left | KeyCode::Char('h') => {
-                                match app.filter_selected {
-                                    1 => { if app.filter.min_size_kb > 0 { app.filter.min_size_kb -= 100; } }
-                                    2 => { if app.filter.max_size_kb > 0 { app.filter.max_size_kb -= 100; } }
-                                    4 => {
-                                        app.sort_config = match app.sort_config.field {
-                                            SortField::Name => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
-                                            SortField::Size => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
-                                            SortField::Date => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
-                                            SortField::Type => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
-                                        };
+                            KeyCode::Left | KeyCode::Char('h') => match app.filter_selected {
+                                1 => {
+                                    if app.filter.min_size_kb > 0 {
+                                        app.filter.min_size_kb -= 100;
                                     }
-                                    _ => {}
                                 }
-                            }
-                            KeyCode::Right | KeyCode::Char('l') => {
-                                match app.filter_selected {
-                                    1 => { app.filter.min_size_kb += 100; }
-                                    2 => { app.filter.max_size_kb += 100; }
-                                    4 => {
-                                        app.sort_config = match app.sort_config.field {
-                                            SortField::Name => SortConfig { field: SortField::Size, ascending: app.sort_config.ascending },
-                                            SortField::Size => SortConfig { field: SortField::Date, ascending: app.sort_config.ascending },
-                                            SortField::Date => SortConfig { field: SortField::Type, ascending: app.sort_config.ascending },
-                                            SortField::Type => SortConfig { field: SortField::Name, ascending: app.sort_config.ascending },
-                                        };
+                                2 => {
+                                    if app.filter.max_size_kb > 0 {
+                                        app.filter.max_size_kb -= 100;
                                     }
-                                    _ => {}
                                 }
-                            }
+                                4 => {
+                                    app.sort_config = match app.sort_config.field {
+                                        SortField::Name => SortConfig {
+                                            field: SortField::Type,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Size => SortConfig {
+                                            field: SortField::Name,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Date => SortConfig {
+                                            field: SortField::Size,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Type => SortConfig {
+                                            field: SortField::Date,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                    };
+                                }
+                                _ => {}
+                            },
+                            KeyCode::Right | KeyCode::Char('l') => match app.filter_selected {
+                                1 => {
+                                    app.filter.min_size_kb += 100;
+                                }
+                                2 => {
+                                    app.filter.max_size_kb += 100;
+                                }
+                                4 => {
+                                    app.sort_config = match app.sort_config.field {
+                                        SortField::Name => SortConfig {
+                                            field: SortField::Size,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Size => SortConfig {
+                                            field: SortField::Date,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Date => SortConfig {
+                                            field: SortField::Type,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                        SortField::Type => SortConfig {
+                                            field: SortField::Name,
+                                            ascending: app.sort_config.ascending,
+                                        },
+                                    };
+                                }
+                                _ => {}
+                            },
                             KeyCode::Backspace => {
                                 if app.filter_selected == 3 {
                                     app.filter.name_pattern.pop();
@@ -4331,9 +5047,13 @@ fn run_app(
                         },
                         // Feature #11: Info Panel
                         AppState::InfoPanel => match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => app.state = AppState::Preview,
+                            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => {
+                                app.state = AppState::Preview
+                            }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.info_selected > 0 { app.info_selected -= 1; }
+                                if app.info_selected > 0 {
+                                    app.info_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.info_selected < app.preview_items.len().saturating_sub(1) {
@@ -4342,16 +5062,20 @@ fn run_app(
                             }
                             _ => {}
                         },
-                        AppState::ConfirmDialog => {}, // Handled above
-                        AppState::Help => {}, // Handled above
+                        AppState::ConfirmDialog => {} // Handled above
+                        AppState::Help => {}          // Handled above
                         // New feature state handlers
                         AppState::SizeCompare => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.size_compare_scroll > 0 { app.size_compare_scroll -= 1; }
+                                if app.size_compare_scroll > 0 {
+                                    app.size_compare_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.size_compare_scroll < app.size_comparisons.len().saturating_sub(1) {
+                                if app.size_compare_scroll
+                                    < app.size_comparisons.len().saturating_sub(1)
+                                {
                                     app.size_compare_scroll += 1;
                                 }
                             }
@@ -4365,7 +5089,9 @@ fn run_app(
                         AppState::ErrorPanel => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.error_scroll > 0 { app.error_scroll -= 1; }
+                                if app.error_scroll > 0 {
+                                    app.error_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.error_scroll < app.error_details.len().saturating_sub(1) {
@@ -4374,7 +5100,9 @@ fn run_app(
                             }
                             KeyCode::Char('c') => {
                                 app.error_details.clear();
-                                if let Ok(mut errs) = app.errors.lock() { errs.clear(); }
+                                if let Ok(mut errs) = app.errors.lock() {
+                                    errs.clear();
+                                }
                             }
                             KeyCode::Char('e') => {
                                 let _ = app.export_log();
@@ -4384,7 +5112,9 @@ fn run_app(
                         AppState::Presets => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.preset_selected > 0 { app.preset_selected -= 1; }
+                                if app.preset_selected > 0 {
+                                    app.preset_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.preset_selected < app.presets.len().saturating_sub(1) {
@@ -4401,10 +5131,14 @@ fn run_app(
                         AppState::Scheduler => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.scheduler_selected > 0 { app.scheduler_selected -= 1; }
+                                if app.scheduler_selected > 0 {
+                                    app.scheduler_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.scheduler_selected < app.scheduler_jobs.len().saturating_sub(1) {
+                                if app.scheduler_selected
+                                    < app.scheduler_jobs.len().saturating_sub(1)
+                                {
                                     app.scheduler_selected += 1;
                                 }
                             }
@@ -4421,14 +5155,18 @@ fn run_app(
                                 }
                             }
                             KeyCode::Char('t') => {
-                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                if let Some(job) =
+                                    app.scheduler_jobs.get_mut(app.scheduler_selected)
+                                {
                                     job.enabled = !job.enabled;
                                 }
                             }
                             KeyCode::Char('d') => {
                                 if !app.scheduler_jobs.is_empty() {
                                     app.scheduler_jobs.remove(app.scheduler_selected);
-                                    if app.scheduler_selected >= app.scheduler_jobs.len() && app.scheduler_selected > 0 {
+                                    if app.scheduler_selected >= app.scheduler_jobs.len()
+                                        && app.scheduler_selected > 0
+                                    {
                                         app.scheduler_selected -= 1;
                                     }
                                 }
@@ -4437,19 +5175,39 @@ fn run_app(
                                 app.scheduler_editing = false;
                             }
                             KeyCode::Left | KeyCode::Char('h') if app.scheduler_editing => {
-                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                if let Some(job) =
+                                    app.scheduler_jobs.get_mut(app.scheduler_selected)
+                                {
                                     match app.scheduler_field {
-                                        0 => { if job.hour > 0 { job.hour -= 1; } }
-                                        1 => { if job.minute > 0 { job.minute -= 1; } }
+                                        0 => {
+                                            if job.hour > 0 {
+                                                job.hour -= 1;
+                                            }
+                                        }
+                                        1 => {
+                                            if job.minute > 0 {
+                                                job.minute -= 1;
+                                            }
+                                        }
                                         _ => {}
                                     }
                                 }
                             }
                             KeyCode::Right | KeyCode::Char('l') if app.scheduler_editing => {
-                                if let Some(job) = app.scheduler_jobs.get_mut(app.scheduler_selected) {
+                                if let Some(job) =
+                                    app.scheduler_jobs.get_mut(app.scheduler_selected)
+                                {
                                     match app.scheduler_field {
-                                        0 => { if job.hour < 23 { job.hour += 1; } }
-                                        1 => { if job.minute < 59 { job.minute += 1; } }
+                                        0 => {
+                                            if job.hour < 23 {
+                                                job.hour += 1;
+                                            }
+                                        }
+                                        1 => {
+                                            if job.minute < 59 {
+                                                job.minute += 1;
+                                            }
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -4462,10 +5220,14 @@ fn run_app(
                         AppState::HistoryExport => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.export_format > 0 { app.export_format -= 1; }
+                                if app.export_format > 0 {
+                                    app.export_format -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.export_format < 1 { app.export_format += 1; }
+                                if app.export_format < 1 {
+                                    app.export_format += 1;
+                                }
                             }
                             KeyCode::Enter => {
                                 let result = if app.export_format == 0 {
@@ -4492,19 +5254,28 @@ fn run_app(
                         AppState::ThemeEditor => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.theme_edit_selected > 0 { app.theme_edit_selected -= 1; }
+                                if app.theme_edit_selected > 0 {
+                                    app.theme_edit_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.theme_edit_selected < 9 { app.theme_edit_selected += 1; }
+                                if app.theme_edit_selected < 9 {
+                                    app.theme_edit_selected += 1;
+                                }
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
                                 app.theme_edit_field = app.theme_edit_field.saturating_sub(1);
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
-                                if app.theme_edit_field < 2 { app.theme_edit_field += 1; }
+                                if app.theme_edit_field < 2 {
+                                    app.theme_edit_field += 1;
+                                }
                             }
                             KeyCode::Char('a') => {
-                                app.save_custom_theme(&format!("Theme_{}", app.custom_themes.len() + 1));
+                                app.save_custom_theme(&format!(
+                                    "Theme_{}",
+                                    app.custom_themes.len() + 1
+                                ));
                             }
                             KeyCode::Enter => {
                                 app.state = AppState::Menu;
@@ -4514,24 +5285,34 @@ fn run_app(
                         AppState::DashboardCustom => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Stats,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.dashboard_selected > 0 { app.dashboard_selected -= 1; }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.dashboard_selected < 3 { app.dashboard_selected += 1; }
-                            }
-                            KeyCode::Char(' ') => {
-                                match app.dashboard_selected {
-                                    0 => app.widget_layout.show_summary = !app.widget_layout.show_summary,
-                                    1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
-                                    2 => app.widget_layout.show_history = !app.widget_layout.show_history,
-                                    3 => app.widget_layout.show_compression = !app.widget_layout.show_compression,
-                                    _ => {}
+                                if app.dashboard_selected > 0 {
+                                    app.dashboard_selected -= 1;
                                 }
                             }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.dashboard_selected < 3 {
+                                    app.dashboard_selected += 1;
+                                }
+                            }
+                            KeyCode::Char(' ') => match app.dashboard_selected {
+                                0 => {
+                                    app.widget_layout.show_summary = !app.widget_layout.show_summary
+                                }
+                                1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
+                                2 => {
+                                    app.widget_layout.show_history = !app.widget_layout.show_history
+                                }
+                                3 => {
+                                    app.widget_layout.show_compression =
+                                        !app.widget_layout.show_compression
+                                }
+                                _ => {}
+                            },
                             KeyCode::Enter => {
                                 let _ = fs::write(
                                     ".io_tool_dashboard.json",
-                                    serde_json::to_string_pretty(&app.widget_layout).unwrap_or_default(),
+                                    serde_json::to_string_pretty(&app.widget_layout)
+                                        .unwrap_or_default(),
                                 );
                                 app.state = AppState::Stats;
                             }
@@ -4540,10 +5321,14 @@ fn run_app(
                         AppState::CompressionGraph => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.compress_scroll > 0 { app.compress_scroll -= 1; }
+                                if app.compress_scroll > 0 {
+                                    app.compress_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.compress_scroll < app.compression_stats.len().saturating_sub(1) {
+                                if app.compress_scroll
+                                    < app.compression_stats.len().saturating_sub(1)
+                                {
                                     app.compress_scroll += 1;
                                 }
                             }
@@ -4553,10 +5338,14 @@ fn run_app(
                         AppState::FileClassify => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.classify_selected > 0 { app.classify_selected -= 1; }
+                                if app.classify_selected > 0 {
+                                    app.classify_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.classify_selected < app.classify_rules.len().saturating_sub(1) {
+                                if app.classify_selected
+                                    < app.classify_rules.len().saturating_sub(1)
+                                {
                                     app.classify_selected += 1;
                                 }
                             }
@@ -4567,7 +5356,9 @@ fn run_app(
                             KeyCode::Char('d') => {
                                 if !app.classify_rules.is_empty() {
                                     app.classify_rules.remove(app.classify_selected);
-                                    if app.classify_selected >= app.classify_rules.len() && app.classify_selected > 0 {
+                                    if app.classify_selected >= app.classify_rules.len()
+                                        && app.classify_selected > 0
+                                    {
                                         app.classify_selected -= 1;
                                     }
                                 }
@@ -4575,7 +5366,10 @@ fn run_app(
                             KeyCode::Enter if app.classify_adding => {
                                 let parts: Vec<&str> = app.classify_input.splitn(2, ':').collect();
                                 if parts.len() == 2 {
-                                    app.classify_rules.push((parts[0].trim().to_string(), parts[1].trim().to_string()));
+                                    app.classify_rules.push((
+                                        parts[0].trim().to_string(),
+                                        parts[1].trim().to_string(),
+                                    ));
                                 }
                                 app.classify_adding = false;
                                 app.classify_input.clear();
@@ -4592,7 +5386,9 @@ fn run_app(
                         AppState::MetaEdit => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.meta_scroll > 0 { app.meta_scroll -= 1; }
+                                if app.meta_scroll > 0 {
+                                    app.meta_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.meta_scroll < app.meta_files.len().saturating_sub(1) {
@@ -4600,7 +5396,8 @@ fn run_app(
                                 }
                             }
                             KeyCode::Char(' ') => {
-                                if let Some((_, selected)) = app.meta_files.get_mut(app.meta_scroll) {
+                                if let Some((_, selected)) = app.meta_files.get_mut(app.meta_scroll)
+                                {
                                     *selected = !*selected;
                                 }
                             }
@@ -4624,25 +5421,27 @@ fn run_app(
                         AppState::ConfigIO => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.config_io_selected > 0 { app.config_io_selected -= 1; }
-                            }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.config_io_selected < 1 { app.config_io_selected += 1; }
-                            }
-                            KeyCode::Char('e') => {
-                                match app.export_config() {
-                                    Ok(path) => {
-                                        if let Ok(mut logs) = app.logs.lock() {
-                                            logs.push(format!("Config exported to: {}", path));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        if let Ok(mut logs) = app.logs.lock() {
-                                            logs.push(format!("Export failed: {}", e));
-                                        }
-                                    }
+                                if app.config_io_selected > 0 {
+                                    app.config_io_selected -= 1;
                                 }
                             }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if app.config_io_selected < 1 {
+                                    app.config_io_selected += 1;
+                                }
+                            }
+                            KeyCode::Char('e') => match app.export_config() {
+                                Ok(path) => {
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Config exported to: {}", path));
+                                    }
+                                }
+                                Err(e) => {
+                                    if let Ok(mut logs) = app.logs.lock() {
+                                        logs.push(format!("Export failed: {}", e));
+                                    }
+                                }
+                            },
                             KeyCode::Char('i') => {
                                 app.config_io_adding = true;
                                 app.config_io_path.clear();
@@ -4675,7 +5474,9 @@ fn run_app(
                         AppState::Plugins => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.plugin_selected > 0 { app.plugin_selected -= 1; }
+                                if app.plugin_selected > 0 {
+                                    app.plugin_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.plugin_selected < app.plugins.len().saturating_sub(1) {
@@ -4689,7 +5490,10 @@ fn run_app(
                             }
                             KeyCode::Char('r') => app.scan_plugins(),
                             KeyCode::Char('o') => {
-                                if let Err(e) = std::process::Command::new("explorer").arg(&app.plugin_dir).spawn() {
+                                if let Err(e) = std::process::Command::new("explorer")
+                                    .arg(&app.plugin_dir)
+                                    .spawn()
+                                {
                                     if let Ok(mut logs) = app.logs.lock() {
                                         logs.push(format!("Failed to open: {}", e));
                                     }
@@ -4700,15 +5504,21 @@ fn run_app(
                         AppState::StatusbarCustom => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.statusbar_selected > 0 { app.statusbar_selected -= 1; }
+                                if app.statusbar_selected > 0 {
+                                    app.statusbar_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.statusbar_selected < app.statusbar_items.len().saturating_sub(1) {
+                                if app.statusbar_selected
+                                    < app.statusbar_items.len().saturating_sub(1)
+                                {
                                     app.statusbar_selected += 1;
                                 }
                             }
                             KeyCode::Char(' ') => {
-                                if let Some((_, enabled)) = app.statusbar_items.get_mut(app.statusbar_selected) {
+                                if let Some((_, enabled)) =
+                                    app.statusbar_items.get_mut(app.statusbar_selected)
+                                {
                                     *enabled = !*enabled;
                                 }
                             }
@@ -4723,7 +5533,9 @@ fn run_app(
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if let Some(ref mut p) = app.image_preview {
-                                    if p.height > 0 { p.height -= 1; }
+                                    if p.height > 0 {
+                                        p.height -= 1;
+                                    }
                                 }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
@@ -4739,7 +5551,9 @@ fn run_app(
                                 app.state = AppState::Menu;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.split_left_scroll > 0 { app.split_left_scroll -= 1; }
+                                if app.split_left_scroll > 0 {
+                                    app.split_left_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.split_left_scroll += 1;
@@ -4752,7 +5566,9 @@ fn run_app(
                         AppState::QuickActions => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.quick_selected > 0 { app.quick_selected -= 1; }
+                                if app.quick_selected > 0 {
+                                    app.quick_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.quick_selected < app.quick_actions.len().saturating_sub(1) {
@@ -4765,7 +5581,9 @@ fn run_app(
                                     if *idx < menu_items.len() {
                                         let item = menu_items[*idx];
                                         match item {
-                                            MenuItem::FullProcess => app.state = AppState::StepSelect,
+                                            MenuItem::FullProcess => {
+                                                app.state = AppState::StepSelect
+                                            }
                                             MenuItem::Settings => app.state = AppState::Settings,
                                             MenuItem::Statistics => app.state = AppState::Stats,
                                             _ => {}
@@ -4778,7 +5596,9 @@ fn run_app(
                         AppState::RecentFiles => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.recent_scroll > 0 { app.recent_scroll -= 1; }
+                                if app.recent_scroll > 0 {
+                                    app.recent_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.recent_scroll += 1;
@@ -4791,7 +5611,9 @@ fn run_app(
                                 app.state = AppState::Menu;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.tag_selected > 0 { app.tag_selected -= 1; }
+                                if app.tag_selected > 0 {
+                                    app.tag_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.tag_selected < app.file_tags.len().saturating_sub(1) {
@@ -4820,7 +5642,9 @@ fn run_app(
                         AppState::SideBySideDiff => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.diff_scroll > 0 { app.diff_scroll -= 1; }
+                                if app.diff_scroll > 0 {
+                                    app.diff_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.diff_scroll += 1;
@@ -4830,14 +5654,20 @@ fn run_app(
                         AppState::FileTreeView => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.tree_selected > 0 { app.tree_selected -= 1; }
+                                if app.tree_selected > 0 {
+                                    app.tree_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.tree_selected += 1;
                             }
                             KeyCode::Enter => {
                                 // Toggle expand/collapse
-                                fn toggle_node(nodes: &mut [FileTreeNode], idx: usize, counter: &mut usize) {
+                                fn toggle_node(
+                                    nodes: &mut [FileTreeNode],
+                                    idx: usize,
+                                    counter: &mut usize,
+                                ) {
                                     for node in nodes.iter_mut() {
                                         if *counter == idx {
                                             node.expanded = !node.expanded;
@@ -4880,21 +5710,32 @@ fn run_app(
                                 app.preview_rename_pattern();
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.rename_selected > 0 { app.rename_selected -= 1; }
+                                if app.rename_selected > 0 {
+                                    app.rename_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.rename_selected < app.rename_patterns.len().saturating_sub(1) {
+                                if app.rename_selected < app.rename_patterns.len().saturating_sub(1)
+                                {
                                     app.rename_selected += 1;
                                 }
                             }
                             KeyCode::Backspace => {
                                 if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
-                                    if app.rename_field == 0 { p.pattern.pop(); } else { p.replacement.pop(); }
+                                    if app.rename_field == 0 {
+                                        p.pattern.pop();
+                                    } else {
+                                        p.replacement.pop();
+                                    }
                                 }
                             }
                             KeyCode::Char(c) => {
                                 if let Some(p) = app.rename_patterns.get_mut(app.rename_selected) {
-                                    if app.rename_field == 0 { p.pattern.push(c); } else { p.replacement.push(c); }
+                                    if app.rename_field == 0 {
+                                        p.pattern.push(c);
+                                    } else {
+                                        p.replacement.push(c);
+                                    }
                                 }
                             }
                             _ => {}
@@ -4902,7 +5743,9 @@ fn run_app(
                         AppState::Timeline => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.timeline_scroll > 0 { app.timeline_scroll -= 1; }
+                                if app.timeline_scroll > 0 {
+                                    app.timeline_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.timeline_scroll += 1;
@@ -4912,7 +5755,9 @@ fn run_app(
                         AppState::NotificationCenter => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.notif_scroll > 0 { app.notif_scroll -= 1; }
+                                if app.notif_scroll > 0 {
+                                    app.notif_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 app.notif_scroll += 1;
@@ -4936,47 +5781,62 @@ fn run_app(
                             KeyCode::Right | KeyCode::Char('l') => {
                                 app.report_format = 1;
                             }
-                            KeyCode::Enter => {
-                                match app.export_report() {
-                                    Ok(path) => {
-                                        app.add_notification(format!("Report exported to {}", path), "success".into());
-                                        app.state = AppState::Menu;
-                                    }
-                                    Err(e) => {
-                                        app.add_notification(format!("Export failed: {}", e), "error".into());
-                                    }
+                            KeyCode::Enter => match app.export_report() {
+                                Ok(path) => {
+                                    app.add_notification(
+                                        format!("Report exported to {}", path),
+                                        "success".into(),
+                                    );
+                                    app.state = AppState::Menu;
                                 }
-                            }
+                                Err(e) => {
+                                    app.add_notification(
+                                        format!("Export failed: {}", e),
+                                        "error".into(),
+                                    );
+                                }
+                            },
                             _ => {}
                         },
                         AppState::SimilarImages => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.similar_selected > 0 { app.similar_selected -= 1; }
+                                if app.similar_selected > 0 {
+                                    app.similar_selected -= 1;
+                                }
                                 app.similar_file_selected = 0;
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.similar_selected < app.similar_groups.len().saturating_sub(1) {
+                                if app.similar_selected < app.similar_groups.len().saturating_sub(1)
+                                {
                                     app.similar_selected += 1;
                                 }
                                 app.similar_file_selected = 0;
                             }
                             KeyCode::Left | KeyCode::Char('h') => {
-                                if app.similar_file_selected > 0 { app.similar_file_selected -= 1; }
+                                if app.similar_file_selected > 0 {
+                                    app.similar_file_selected -= 1;
+                                }
                             }
                             KeyCode::Right | KeyCode::Char('l') => {
                                 if let Some(group) = app.similar_groups.get(app.similar_selected) {
-                                    if app.similar_file_selected < group.files.len().saturating_sub(1) {
+                                    if app.similar_file_selected
+                                        < group.files.len().saturating_sub(1)
+                                    {
                                         app.similar_file_selected += 1;
                                     }
                                 }
                             }
                             KeyCode::Char('+') | KeyCode::Char('=') => {
-                                if app.similar_threshold < 64 { app.similar_threshold += 1; }
+                                if app.similar_threshold < 64 {
+                                    app.similar_threshold += 1;
+                                }
                                 app.scan_similar_images();
                             }
                             KeyCode::Char('-') => {
-                                if app.similar_threshold > 0 { app.similar_threshold -= 1; }
+                                if app.similar_threshold > 0 {
+                                    app.similar_threshold -= 1;
+                                }
                                 app.scan_similar_images();
                             }
                             KeyCode::Char('s') => {
@@ -4999,10 +5859,14 @@ fn run_app(
                         AppState::RenamePreview => match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.rename_preview_scroll > 0 { app.rename_preview_scroll -= 1; }
+                                if app.rename_preview_scroll > 0 {
+                                    app.rename_preview_scroll -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.rename_preview_scroll < app.rename_preview_items.len().saturating_sub(1) {
+                                if app.rename_preview_scroll
+                                    < app.rename_preview_items.len().saturating_sub(1)
+                                {
                                     app.rename_preview_scroll += 1;
                                 }
                             }
@@ -5019,16 +5883,26 @@ fn run_app(
                             KeyCode::Char('s') => {
                                 // Set source path from config
                                 app.folder_sync_source = app.config.twitter_src.clone();
-                                app.folder_sync_log.push(format!("[{}] Source: {}", chrono::Local::now().format("%H:%M:%S"), app.folder_sync_source));
+                                app.folder_sync_log.push(format!(
+                                    "[{}] Source: {}",
+                                    chrono::Local::now().format("%H:%M:%S"),
+                                    app.folder_sync_source
+                                ));
                             }
                             KeyCode::Char('d') => {
                                 // Set dest path from config
                                 app.folder_sync_dest = app.config.dest.clone();
-                                app.folder_sync_log.push(format!("[{}] Dest: {}", chrono::Local::now().format("%H:%M:%S"), app.folder_sync_dest));
+                                app.folder_sync_log.push(format!(
+                                    "[{}] Dest: {}",
+                                    chrono::Local::now().format("%H:%M:%S"),
+                                    app.folder_sync_dest
+                                ));
                             }
                             KeyCode::Char('r') => {
                                 // Run sync now
-                                if !app.folder_sync_source.is_empty() && !app.folder_sync_dest.is_empty() {
+                                if !app.folder_sync_source.is_empty()
+                                    && !app.folder_sync_dest.is_empty()
+                                {
                                     let src = std::path::PathBuf::from(&app.folder_sync_source);
                                     let dst = std::path::PathBuf::from(&app.folder_sync_dest);
                                     if src.exists() {
@@ -5037,7 +5911,8 @@ fn run_app(
                                         if let Ok(entries) = std::fs::read_dir(&src) {
                                             for entry in entries.flatten() {
                                                 let from = entry.path();
-                                                let to = dst.join(from.file_name().unwrap_or_default());
+                                                let to =
+                                                    dst.join(from.file_name().unwrap_or_default());
                                                 if from.is_file() && !to.exists() {
                                                     if std::fs::copy(&from, &to).is_ok() {
                                                         copied += 1;
@@ -5045,15 +5920,27 @@ fn run_app(
                                                 }
                                             }
                                         }
-                                        app.folder_sync_log.push(format!("[{}] Synced {} files", chrono::Local::now().format("%H:%M:%S"), copied));
+                                        app.folder_sync_log.push(format!(
+                                            "[{}] Synced {} files",
+                                            chrono::Local::now().format("%H:%M:%S"),
+                                            copied
+                                        ));
                                     }
                                 }
                             }
                             KeyCode::Char('w') => {
                                 // Toggle watch mode
                                 app.folder_sync_watching = !app.folder_sync_watching;
-                                let status = if app.folder_sync_watching { "ON" } else { "OFF" };
-                                app.folder_sync_log.push(format!("[{}] Watch: {}", chrono::Local::now().format("%H:%M:%S"), status));
+                                let status = if app.folder_sync_watching {
+                                    "ON"
+                                } else {
+                                    "OFF"
+                                };
+                                app.folder_sync_log.push(format!(
+                                    "[{}] Watch: {}",
+                                    chrono::Local::now().format("%H:%M:%S"),
+                                    status
+                                ));
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 // scroll log
@@ -5073,10 +5960,14 @@ fn run_app(
                                 }
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.keybind_selected > 0 { app.keybind_selected -= 1; }
+                                if app.keybind_selected > 0 {
+                                    app.keybind_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.keybind_selected < 13 { app.keybind_selected += 1; }
+                                if app.keybind_selected < 13 {
+                                    app.keybind_selected += 1;
+                                }
                             }
                             KeyCode::Enter => {
                                 if app.keybind_editing {
@@ -5117,15 +6008,21 @@ fn run_app(
                         AppState::CommandPalette => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                if app.palette_selected > 0 { app.palette_selected -= 1; }
+                                if app.palette_selected > 0 {
+                                    app.palette_selected -= 1;
+                                }
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if app.palette_selected < app.palette_results.len().saturating_sub(1) {
+                                if app.palette_selected
+                                    < app.palette_results.len().saturating_sub(1)
+                                {
                                     app.palette_selected += 1;
                                 }
                             }
                             KeyCode::Enter => {
-                                if let Some((_, idx)) = app.palette_results.get(app.palette_selected) {
+                                if let Some((_, idx)) =
+                                    app.palette_results.get(app.palette_selected)
+                                {
                                     app.selected = *idx;
                                     app.state = AppState::Menu;
                                 }
@@ -5166,31 +6063,34 @@ fn run_app(
                         }
                     }
                 }
-                Event::Mouse(mouse) => {
-                    match mouse.kind {
-                        crossterm::event::MouseEventKind::ScrollUp => {
-                            if app.selected > 0 { app.selected -= 1; }
+                Event::Mouse(mouse) => match mouse.kind {
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        if app.selected > 0 {
+                            app.selected -= 1;
                         }
-                        crossterm::event::MouseEventKind::ScrollDown => {
-                            if app.selected < app.menu_items.len().saturating_sub(1) {
-                                app.selected += 1;
-                            }
-                        }
-                        crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-                            let row = mouse.row as usize;
-                            if row >= 3 && row < app.menu_items.len() + 3 {
-                                app.selected = row - 3;
-                            }
-                        }
-                        _ => {}
                     }
-                }
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        if app.selected < app.menu_items.len().saturating_sub(1) {
+                            app.selected += 1;
+                        }
+                    }
+                    crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                        let row = mouse.row as usize;
+                        if row >= 3 && row < app.menu_items.len() + 3 {
+                            app.selected = row - 3;
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
 
         if app.state == AppState::Processing && !*app.is_processing.lock().unwrap() {
-            let elapsed = app.start_time.lock().unwrap()
+            let elapsed = app
+                .start_time
+                .lock()
+                .unwrap()
                 .map(|t| t.elapsed().as_secs_f64())
                 .unwrap_or(0.0);
             let errs = app.errors.lock().unwrap().len();
@@ -5250,15 +6150,26 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::Splash => "  pixpipe".to_string(),
         AppState::Menu => {
             let dry = if app.dry_run { " [DRY RUN]" } else { "" };
-            let pause = if *app.is_paused.lock().unwrap() { " [PAUSED]" } else { "" };
+            let pause = if *app.is_paused.lock().unwrap() {
+                " [PAUSED]"
+            } else {
+                ""
+            };
             let watch = if app.watch_active { " [WATCH]" } else { "" };
-            format!("  Image Processing Tool — io-tool{}{}{}  [Theme: {}]", dry, pause, watch, THEME_NAMES[app.theme_idx])
+            format!(
+                "  Image Processing Tool — io-tool{}{}{}  [Theme: {}]",
+                dry, pause, watch, THEME_NAMES[app.theme_idx]
+            )
         }
         AppState::StepSelect => "  Full Process — Select Steps".to_string(),
         AppState::Preview => "  Preview — Rename Changes".to_string(),
         AppState::Processing => {
             let sp = SPINNER_CHARS[app.spinner_idx];
-            let pause = if *app.is_paused.lock().unwrap() { " [PAUSED]" } else { "" };
+            let pause = if *app.is_paused.lock().unwrap() {
+                " [PAUSED]"
+            } else {
+                ""
+            };
             format!("  {} Processing...{}", sp, pause)
         }
         AppState::Done => "  Completed".to_string(),
@@ -5305,7 +6216,11 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::SimilarImages => "  Similar Image Search".to_string(),
     };
     let header = Paragraph::new(header_text)
-        .style(Style::default().fg(theme.primary).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::ALL).title("io-tool"));
     f.render_widget(header, chunks[0]);
 
@@ -5374,9 +6289,13 @@ fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let footer_text = match app.state {
         AppState::Splash => "",
-        AppState::Menu => "j/k: Nav │ 1-9: Select │ Enter: Run │ t:Theme │ d:DryRun │ u:Undo │ ?:Help │ q:Quit",
+        AppState::Menu => {
+            "j/k: Nav │ 1-9: Select │ Enter: Run │ t:Theme │ d:DryRun │ u:Undo │ ?:Help │ q:Quit"
+        }
         AppState::StepSelect => "j/k: Nav │ Space: Toggle │ a: All │ Enter: Confirm │ Esc: Back",
-        AppState::Preview => "j/k: Scroll │ PgUp/PgDn │ Home/End │ i:Info │ Enter: Start │ Esc: Back",
+        AppState::Preview => {
+            "j/k: Scroll │ PgUp/PgDn │ Home/End │ i:Info │ Enter: Start │ Esc: Back"
+        }
         AppState::Processing => "Processing... │ Ctrl+P: Pause │ Esc: Interrupt │ /: Search log",
         AppState::Done => "r: Menu │ /: Search │ u: Undo │ Ctrl+E: Export │ q: Quit",
         AppState::Settings => "j/k: Nav │ Enter: Save │ Esc: Back",
@@ -5415,7 +6334,9 @@ fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
         AppState::CommandPalette => "Type to search │ Enter: Select │ Esc: Back",
         AppState::NotificationCenter => "j/k: Nav │ r: Read │ Esc: Back",
         AppState::ExportReport => "←→: Format │ Enter: Export │ Esc: Back",
-        AppState::SimilarImages => "j/k: Group │ h/l: File │ +/-: Threshold │ s: Scan │ d: Delete │ Esc: Back",
+        AppState::SimilarImages => {
+            "j/k: Group │ h/l: File │ +/-: Threshold │ s: Scan │ d: Delete │ Esc: Back"
+        }
         AppState::RenamePreview => "j/k: Scroll │ Enter: Confirm │ Esc: Cancel",
         AppState::FolderSync => "s: Source │ d: Dest │ r: Sync │ w: Watch │ Esc: Back",
         AppState::KeybindCustom => "j/k: Select │ Enter: Edit │ Esc: Back",
@@ -5431,8 +6352,16 @@ fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let now = chrono::Local::now().format("%H:%M:%S");
     let mem = app.sys_info.used_memory() / 1024 / 1024;
     let total_mem = app.sys_info.total_memory() / 1024 / 1024;
-    let retry_info = if app.retry_count > 0 { format!(" │ Retry: {}", app.retry_count) } else { String::new() };
-    let watch_info = if app.watch_active { format!(" │ Watched: {}", app.watch_processed) } else { String::new() };
+    let retry_info = if app.retry_count > 0 {
+        format!(" │ Retry: {}", app.retry_count)
+    } else {
+        String::new()
+    };
+    let watch_info = if app.watch_active {
+        format!(" │ Watched: {}", app.watch_processed)
+    } else {
+        String::new()
+    };
     let filter_info = if !app.filter.name_pattern.is_empty() || app.filter.min_size_kb > 0 {
         format!(" │ Filter: ON")
     } else {
@@ -5442,12 +6371,14 @@ fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
         " Runs: {} │ Files: {} │ Mem: {}/{}MB{}{}{} │ Time: {}",
         app.history.total_runs,
         app.history.total_files_processed,
-        mem, total_mem,
-        retry_info, watch_info, filter_info,
+        mem,
+        total_mem,
+        retry_info,
+        watch_info,
+        filter_info,
         now
     );
-    let bar = Paragraph::new(history_info)
-        .style(Style::default().fg(theme.muted));
+    let bar = Paragraph::new(history_info).style(Style::default().fg(theme.muted));
     f.render_widget(bar, area);
 }
 
@@ -5478,12 +6409,16 @@ fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
     let version = format!("v{} | Rust TUI Application", env!("CARGO_PKG_VERSION"));
     let hint = "Press any key to continue...";
 
-    let mut lines: Vec<Line> = logo.iter().map(|l| {
-        Line::from(Span::styled(*l, Style::default().fg(theme.accent)))
-    }).collect();
+    let mut lines: Vec<Line> = logo
+        .iter()
+        .map(|l| Line::from(Span::styled(*l, Style::default().fg(theme.accent))))
+        .collect();
 
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(version, Style::default().fg(theme.muted))));
+    lines.push(Line::from(Span::styled(
+        version,
+        Style::default().fg(theme.muted),
+    )));
     lines.push(Line::from(""));
     if remaining > Duration::ZERO {
         let secs = remaining.as_secs_f64().ceil() as u64;
@@ -5492,7 +6427,10 @@ fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(theme.muted),
         )));
     } else {
-        lines.push(Line::from(Span::styled(hint, Style::default().fg(theme.accent))));
+        lines.push(Line::from(Span::styled(
+            hint,
+            Style::default().fg(theme.accent),
+        )));
     }
 
     let block = Block::default()
@@ -5523,26 +6461,32 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
             let prefix = if i == app.selected { "▶ " } else { "  " };
             let num = format!("[{:02}] ", i + 1);
             let style = if i == app.selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}{}{}", prefix, num, item.label()), style),
-            ]))
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}{}{}", prefix, num, item.label()),
+                style,
+            )]))
         })
         .collect();
 
-    let menu_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Menu"));
+    let menu_list = List::new(items).block(Block::default().borders(Borders::ALL).title("Menu"));
     f.render_widget(menu_list, chunks[0]);
 
     // Right panel: description + stats
     let selected_item = app.menu_items[app.selected];
     let mut desc_lines = vec![
-        Line::from(vec![
-            Span::styled(selected_item.label(), Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            selected_item.label(),
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(Span::raw(selected_item.description())),
         Line::from(""),
@@ -5553,12 +6497,18 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
     if dest_path.exists() {
         if let Ok(entries) = fs::read_dir(&dest_path) {
             let files: Vec<_> = entries.flatten().filter(|e| e.path().is_file()).collect();
-            let total_size: u64 = files.iter()
+            let total_size: u64 = files
+                .iter()
                 .filter_map(|e| fs::metadata(e.path()).ok())
                 .map(|m| m.len())
                 .sum();
             desc_lines.push(Line::from(Span::styled(
-                format!("Destination: {} ({} files, {})", app.config.dest, files.len(), format_size(total_size)),
+                format!(
+                    "Destination: {} ({} files, {})",
+                    app.config.dest,
+                    files.len(),
+                    format_size(total_size)
+                ),
                 Style::default().fg(theme.muted),
             )));
         }
@@ -5575,11 +6525,21 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
         "── History ──",
         Style::default().fg(theme.primary),
     )));
-    desc_lines.push(Line::from(format!("  Total runs: {}", app.history.total_runs)));
-    desc_lines.push(Line::from(format!("  Files processed: {}", app.history.total_files_processed)));
+    desc_lines.push(Line::from(format!(
+        "  Total runs: {}",
+        app.history.total_runs
+    )));
+    desc_lines.push(Line::from(format!(
+        "  Files processed: {}",
+        app.history.total_files_processed
+    )));
     if let Some(last) = app.history.entries.last() {
-        desc_lines.push(Line::from(format!("  Last run: {} ({} files, {})",
-            last.timestamp, last.files_processed, format_duration(last.duration_secs))));
+        desc_lines.push(Line::from(format!(
+            "  Last run: {} ({} files, {})",
+            last.timestamp,
+            last.files_processed,
+            format_duration(last.duration_secs)
+        )));
     }
 
     // Dry run indicator
@@ -5587,7 +6547,9 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
         desc_lines.push(Line::from(""));
         desc_lines.push(Line::from(Span::styled(
             "⚠ DRY RUN MODE ACTIVE",
-            Style::default().fg(theme.warning).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
         )));
     }
 
@@ -5613,20 +6575,27 @@ fn render_step_select(f: &mut Frame, app: &mut App, area: Rect) {
             let check = if app.step_enabled[i] { "☑" } else { "☐" };
             let prefix = if i == app.step_selected { "▶ " } else { "  " };
             let style = if i == app.step_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else if app.step_enabled[i] {
                 Style::default().fg(theme.success)
             } else {
                 Style::default().fg(theme.muted)
             };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}{} {}", prefix, check, label), style),
-            ]))
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}{} {}", prefix, check, label),
+                style,
+            )]))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Steps (Space to toggle)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Steps (Space to toggle)"),
+    );
     f.render_widget(list, chunks[0]);
 
     // Summary panel
@@ -5634,11 +6603,20 @@ fn render_step_select(f: &mut Frame, app: &mut App, area: Rect) {
     let summary_lines = vec![
         Line::from(vec![
             Span::styled("Enabled steps: ", Style::default()),
-            Span::styled(format!("{}/{}", enabled_count, FULL_STEP_LABELS.len()),
-                Style::default().fg(theme.warning).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}/{}", enabled_count, FULL_STEP_LABELS.len()),
+                Style::default()
+                    .fg(theme.warning)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
-        Line::from(Span::styled("Controls:", Style::default().fg(theme.primary).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Controls:",
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from("  Space  — Toggle step"),
         Line::from("  a      — Toggle all"),
         Line::from("  Enter  — Preview changes"),
@@ -5657,7 +6635,7 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Length(2),  // Table header
+            Constraint::Length(2), // Table header
             Constraint::Min(0),
         ])
         .split(area);
@@ -5670,24 +6648,51 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         format_size(app.preview_total_size)
     ))
     .style(Style::default().fg(theme.warning))
-    .block(Block::default().borders(Borders::ALL).title(" 📁 File Summary "));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" 📁 File Summary "),
+    );
     f.render_widget(info, chunks[0]);
 
     // Table header (ferrocopy-inspired)
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  Icon ", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
-        Span::styled("Old Name", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  Icon ",
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Old Name",
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" → ", Style::default().fg(theme.muted)),
-        Span::styled("New Name", Style::default().fg(theme.muted).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "New Name",
+            Style::default()
+                .fg(theme.muted)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]))
     .block(Block::default().borders(Borders::ALL).title("Columns"));
     f.render_widget(header, chunks[1]);
 
     // Preview list with file table rows
     if app.preview_items.is_empty() {
-        let empty_lines = render_empty_state("📭", "No changes detected", "No rename candidates found", &theme);
-        let empty = Paragraph::new(empty_lines)
-            .block(Block::default().borders(Borders::ALL).title("Changes (Enter to start)"));
+        let empty_lines = render_empty_state(
+            "📭",
+            "No changes detected",
+            "No rename candidates found",
+            &theme,
+        );
+        let empty = Paragraph::new(empty_lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Changes (Enter to start)"),
+        );
         f.render_widget(empty, chunks[2]);
     } else {
         let visible_height = chunks[2].height.saturating_sub(2) as usize;
@@ -5697,20 +6702,31 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         let items: Vec<ListItem> = app.preview_items[start..end]
             .iter()
             .map(|(old, new)| {
-                let icon = if old.ends_with(".jxl") { "  " } else if old.ends_with(".jpg") || old.ends_with(".jpeg") { "  " } else { "  " };
+                let icon = if old.ends_with(".jxl") {
+                    "  "
+                } else if old.ends_with(".jpg") || old.ends_with(".jpeg") {
+                    "  "
+                } else {
+                    "  "
+                };
                 ListItem::new(Line::from(vec![
                     Span::styled(format!("  {} ", icon), Style::default().fg(theme.accent)),
-                    Span::styled(format!("{:<40}", truncate_str(old, 40)), Style::default().fg(theme.error)),
+                    Span::styled(
+                        format!("{:<40}", truncate_str(old, 40)),
+                        Style::default().fg(theme.error),
+                    ),
                     Span::styled(" → ", Style::default().fg(theme.muted)),
                     Span::styled(truncate_str(new, 40), Style::default().fg(theme.success)),
                 ]))
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(
-                format!("Changes ({}-{}/{}, Enter to start)", start + 1, end, app.preview_items.len())
-            ));
+        let list = List::new(items).block(Block::default().borders(Borders::ALL).title(format!(
+            "Changes ({}-{}/{}, Enter to start)",
+            start + 1,
+            end,
+            app.preview_items.len()
+        )));
         f.render_widget(list, chunks[2]);
     }
 }
@@ -5721,10 +6737,10 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Current step with status badge
-            Constraint::Length(3),  // Main progress
-            Constraint::Length(3),  // Sub-progress
-            Constraint::Length(6),  // Enhanced stats (speed, ETA, elapsed, files, current)
+            Constraint::Length(3), // Current step with status badge
+            Constraint::Length(3), // Main progress
+            Constraint::Length(3), // Sub-progress
+            Constraint::Length(6), // Enhanced stats (speed, ETA, elapsed, files, current)
             Constraint::Min(0),    // Log
         ])
         .split(area);
@@ -5739,8 +6755,16 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
         ]),
         render_status_badge("processing", &theme),
     ])
-    .style(Style::default().fg(theme.warning).add_modifier(Modifier::BOLD))
-    .block(Block::default().borders(Borders::ALL).title(" ⚙ Current Step "));
+    .style(
+        Style::default()
+            .fg(theme.warning)
+            .add_modifier(Modifier::BOLD),
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" ⚙ Current Step "),
+    );
     f.render_widget(step, chunks[0]);
 
     // Main progress bar with visual gauge
@@ -5748,7 +6772,11 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let gauge_width = (chunks[1].width.saturating_sub(20)) as usize;
     let bar = make_gauge_bar(progress_val, gauge_width);
     let gauge = Gauge::default()
-        .block(Block::default().borders(Borders::ALL).title(" 📊 Progress "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" 📊 Progress "),
+        )
         .gauge_style(Style::default().fg(theme.primary).bg(Color::Black))
         .ratio(progress_val)
         .label(format!("{} {:.0}%", bar, progress_val * 100.0));
@@ -5756,32 +6784,54 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Sub-progress (per-step visual bars)
     let sp = app.step_progress.lock().unwrap().clone();
-    let sub_bars: Vec<Span> = sp.iter().enumerate().map(|(i, &v)| {
-        let mini_bar = make_gauge_bar(v, 8);
-        let label = match i {
-            0 => "Mv",
-            1 => "Ded",
-            2 => "Ref",
-            3 => "Ren",
-            4 => "JXL",
-            _ => "??",
-        };
-        let color = if v >= 1.0 { theme.success } else if v > 0.0 { theme.primary } else { theme.muted };
-        Span::styled(format!(" {}[{}] ", label, mini_bar), Style::default().fg(color))
-    }).collect();
+    let sub_bars: Vec<Span> = sp
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| {
+            let mini_bar = make_gauge_bar(v, 8);
+            let label = match i {
+                0 => "Mv",
+                1 => "Ded",
+                2 => "Ref",
+                3 => "Ren",
+                4 => "JXL",
+                _ => "??",
+            };
+            let color = if v >= 1.0 {
+                theme.success
+            } else if v > 0.0 {
+                theme.primary
+            } else {
+                theme.muted
+            };
+            Span::styled(
+                format!(" {}[{}] ", label, mini_bar),
+                Style::default().fg(color),
+            )
+        })
+        .collect();
     let sub_progress = Paragraph::new(Line::from(sub_bars))
         .block(Block::default().borders(Borders::ALL).title(" 📋 Steps "));
     f.render_widget(sub_progress, chunks[2]);
 
     // Enhanced stats display (ferrocopy-inspired)
-    let elapsed = app.start_time.lock().unwrap()
+    let elapsed = app
+        .start_time
+        .lock()
+        .unwrap()
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
     let processed = *app.files_processed.lock().unwrap();
-    let speed = if elapsed > 0.0 { processed as f64 / elapsed } else { 0.0 };
+    let speed = if elapsed > 0.0 {
+        processed as f64 / elapsed
+    } else {
+        0.0
+    };
     let remaining = if progress_val > 0.0 && progress_val < 1.0 {
         elapsed * (1.0 - progress_val) / progress_val
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     let detail_text = app.progress_detail.lock().unwrap().clone();
     let speed_str = format!("{:.1} files/s", speed);
@@ -5812,15 +6862,22 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),  // Status + stats with enhanced display
-            Constraint::Length(if app.errors.lock().unwrap().is_empty() { 0 } else { 8 }),
-            Constraint::Min(0),    // Log
+            Constraint::Length(7), // Status + stats with enhanced display
+            Constraint::Length(if app.errors.lock().unwrap().is_empty() {
+                0
+            } else {
+                8
+            }),
+            Constraint::Min(0), // Log
         ])
         .split(area);
 
     // Completion message with stats and status badge
     let has_errors = !app.errors.lock().unwrap().is_empty();
-    let elapsed = app.start_time.lock().unwrap()
+    let elapsed = app
+        .start_time
+        .lock()
+        .unwrap()
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
     let processed = *app.files_processed.lock().unwrap();
@@ -5833,7 +6890,10 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
 
     let stats_text = format!(
         "Files: {} │ Duration: {} │ Errors: {} │ Theme: {}",
-        processed, format_duration(elapsed), app.errors.lock().unwrap().len(), THEME_NAMES[app.theme_idx]
+        processed,
+        format_duration(elapsed),
+        app.errors.lock().unwrap().len(),
+        THEME_NAMES[app.theme_idx]
     );
 
     let done_lines = vec![
@@ -5841,12 +6901,25 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from(vec![
             Span::raw("  "),
             Span::styled(
-                if has_errors { "Process completed with errors" } else { "Process completed successfully!" },
-                Style::default().fg(if has_errors { theme.warning } else { theme.success }).add_modifier(Modifier::BOLD),
+                if has_errors {
+                    "Process completed with errors"
+                } else {
+                    "Process completed successfully!"
+                },
+                Style::default()
+                    .fg(if has_errors {
+                        theme.warning
+                    } else {
+                        theme.success
+                    })
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(""),
-        Line::from(Span::styled(format!("  {}", stats_text), Style::default().fg(theme.muted))),
+        Line::from(Span::styled(
+            format!("  {}", stats_text),
+            Style::default().fg(theme.muted),
+        )),
     ];
     let done_msg = Paragraph::new(done_lines)
         .block(Block::default().borders(Borders::ALL).title(" ✓ Status "));
@@ -5857,15 +6930,18 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         let errors = app.errors.lock().unwrap();
         let err_items: Vec<ListItem> = errors
             .iter()
-            .map(|e| ListItem::new(Line::from(Span::styled(
-                format!("  ✗ {}", e),
-                Style::default().fg(theme.error),
-            ))))
+            .map(|e| {
+                ListItem::new(Line::from(Span::styled(
+                    format!("  ✗ {}", e),
+                    Style::default().fg(theme.error),
+                )))
+            })
             .collect();
-        let err_list = List::new(err_items)
-            .block(Block::default().borders(Borders::ALL).title(
-                format!("{} Errors", errors.len())
-            ));
+        let err_list = List::new(err_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("{} Errors", errors.len())),
+        );
         f.render_widget(err_list, chunks[1]);
     }
 
@@ -5882,7 +6958,10 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
         ("Destination", app.config.dest.clone()),
         ("Reference", app.config.reference.clone()),
         ("Days to Check", app.config.days_to_check.to_string()),
-        ("Min File Size (KB)", app.config.min_file_size_kb.to_string()),
+        (
+            "Min File Size (KB)",
+            app.config.min_file_size_kb.to_string(),
+        ),
         ("Max Workers", app.config.max_workers.to_string()),
         ("Extensions", app.config.image_extensions.join(", ")),
         ("Back", String::new()),
@@ -5892,9 +6971,16 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, (label, value))| {
-            let prefix = if i == app.settings_selected { "▶ " } else { "  " };
+            let prefix = if i == app.settings_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.settings_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -5907,8 +6993,11 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Settings (Enter to save & back)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Settings (Enter to save & back)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -5929,7 +7018,8 @@ fn render_log(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         // Show filtered results
         let indices = if app.search_mode {
             let query = app.search_query.to_lowercase();
-            logs.iter().enumerate()
+            logs.iter()
+                .enumerate()
                 .filter(|(_, msg)| msg.to_lowercase().contains(&query))
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>()
@@ -5938,7 +7028,8 @@ fn render_log(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
         };
 
         let offset = indices.len().saturating_sub(visible_height);
-        indices[offset..].iter()
+        indices[offset..]
+            .iter()
             .filter_map(|&i| logs.get(i))
             .map(|msg| {
                 let style = log_line_style(msg, theme);
@@ -5956,14 +7047,15 @@ fn render_log(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
             .collect()
     };
 
-    let log_list = List::new(log_items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+    let log_list = List::new(log_items).block(Block::default().borders(Borders::ALL).title(title));
     f.render_widget(log_list, area);
 }
 
 fn log_line_style(msg: &str, theme: &Theme) -> Style {
     if msg.starts_with("===") {
-        Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme.primary)
+            .add_modifier(Modifier::BOLD)
     } else if msg.contains("Error") || msg.contains("✗") {
         Style::default().fg(theme.error)
     } else if msg.contains("✓") {
@@ -5971,7 +7063,9 @@ fn log_line_style(msg: &str, theme: &Theme) -> Style {
     } else if msg.starts_with("[STEP") {
         Style::default().fg(theme.warning)
     } else if msg.contains("DRY RUN") {
-        Style::default().fg(theme.warning).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(theme.warning)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::White)
     }
@@ -6084,16 +7178,26 @@ fn render_help(f: &mut Frame, app: &mut App, area: Rect) {
     let visible = area.height.saturating_sub(2) as usize;
     let end = (start + visible).min(help_lines.len());
 
-    let items: Vec<ListItem> = help_lines[start..end].iter()
+    let items: Vec<ListItem> = help_lines[start..end]
+        .iter()
         .map(|line| {
             let style = if line.contains("═══") {
                 Style::default().fg(theme.primary)
             } else if line.contains("───") {
                 Style::default().fg(theme.muted)
-            } else if line.starts_with("  Global") || line.starts_with("  Menu") || line.starts_with("  Full") 
-                || line.starts_with("  Preview") || line.starts_with("  Processing") || line.starts_with("  Done")
-                || line.starts_with("  Duplicate") || line.starts_with("  JXL") || line.starts_with("  Watch") {
-                Style::default().fg(theme.warning).add_modifier(Modifier::BOLD)
+            } else if line.starts_with("  Global")
+                || line.starts_with("  Menu")
+                || line.starts_with("  Full")
+                || line.starts_with("  Preview")
+                || line.starts_with("  Processing")
+                || line.starts_with("  Done")
+                || line.starts_with("  Duplicate")
+                || line.starts_with("  JXL")
+                || line.starts_with("  Watch")
+            {
+                Style::default()
+                    .fg(theme.warning)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -6101,10 +7205,12 @@ fn render_help(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Help ({}-{}/{})", start + 1, end, help_lines.len())
-        ));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(format!(
+        "Help ({}-{}/{})",
+        start + 1,
+        end,
+        help_lines.len()
+    )));
     f.render_widget(list, area);
 }
 
@@ -6117,16 +7223,20 @@ fn render_batch_queue(f: &mut Frame, app: &mut App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
     // Queue list
-    let items: Vec<ListItem> = app.batch_queue.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .batch_queue
+        .iter()
+        .enumerate()
         .map(|(i, job)| {
-            let prefix = if i == app.batch_selected { "▶ " } else { "  " };
+            let prefix = if i == app.batch_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let status_icon = match job.status.as_str() {
                 "pending" => "○",
                 "processing" => "●",
@@ -6142,32 +7252,42 @@ fn render_batch_queue(f: &mut Frame, app: &mut App, area: Rect) {
                 _ => Color::White,
             };
             let style = if i == app.batch_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(status_color)
             };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}{} {} [{}]", prefix, status_icon, job.path, job.status), style),
-            ]))
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}{} {} [{}]", prefix, status_icon, job.path, job.status),
+                style,
+            )]))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Batch Queue ({} jobs)", app.batch_queue.len())
-        ));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Batch Queue ({} jobs)", app.batch_queue.len())),
+    );
     f.render_widget(list, chunks[0]);
 
     // Input area
     if app.batch_adding {
         let input = Paragraph::new(format!("  Path: {}_", app.batch_input))
             .style(Style::default().fg(theme.warning))
-            .block(Block::default().borders(Borders::ALL).title("Add Directory (Enter to confirm)"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Add Directory (Enter to confirm)"),
+            );
         f.render_widget(input, chunks[1]);
     } else {
-        let help = Paragraph::new("  a: Add directory │ d: Delete │ Enter: Process all │ Esc: Back")
-            .style(Style::default().fg(theme.muted))
-            .block(Block::default().borders(Borders::ALL).title("Actions"));
+        let help =
+            Paragraph::new("  a: Add directory │ d: Delete │ Enter: Process all │ Esc: Back")
+                .style(Style::default().fg(theme.muted))
+                .block(Block::default().borders(Borders::ALL).title("Actions"));
         f.render_widget(help, chunks[1]);
     }
 }
@@ -6185,35 +7305,63 @@ fn render_duplicate_groups(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Group list
-    let items: Vec<ListItem> = app.duplicate_groups.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .duplicate_groups
+        .iter()
+        .enumerate()
         .map(|(i, group)| {
-            let prefix = if i == app.dup_group_selected { "▶ " } else { "  " };
+            let prefix = if i == app.dup_group_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.dup_group_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             let total_size: u64 = group.files.iter().map(|(_, s)| s).sum();
             ListItem::new(Line::from(Span::styled(
-                format!("{}Group #{}: {} files ({})", prefix, i + 1, group.files.len(), format_size(total_size)),
+                format!(
+                    "{}Group #{}: {} files ({})",
+                    prefix,
+                    i + 1,
+                    group.files.len(),
+                    format_size(total_size)
+                ),
                 style,
             )))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Duplicate Groups ({})", app.duplicate_groups.len())
-        ));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Duplicate Groups ({})", app.duplicate_groups.len())),
+    );
     f.render_widget(list, chunks[0]);
 
     // File list in selected group
     if app.dup_group_selected < app.duplicate_groups.len() {
         let group = &app.duplicate_groups[app.dup_group_selected];
-        let items: Vec<ListItem> = group.files.iter().enumerate()
+        let items: Vec<ListItem> = group
+            .files
+            .iter()
+            .enumerate()
             .map(|(i, (path, size))| {
-                let keep = if i == group.selected { "★ KEEP" } else { "  delete" };
-                let prefix = if i == app.dup_file_selected { "▶ " } else { "  " };
+                let keep = if i == group.selected {
+                    "★ KEEP"
+                } else {
+                    "  delete"
+                };
+                let prefix = if i == app.dup_file_selected {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 let style = if i == group.selected {
                     Style::default().fg(theme.success)
                 } else if i == app.dup_file_selected {
@@ -6221,7 +7369,11 @@ fn render_duplicate_groups(f: &mut Frame, app: &mut App, area: Rect) {
                 } else {
                     Style::default().fg(theme.error)
                 };
-                let file_name = PathBuf::from(path).file_name().unwrap_or_default().to_string_lossy().to_string();
+                let file_name = PathBuf::from(path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 ListItem::new(Line::from(Span::styled(
                     format!("{}{} {} ({})", prefix, keep, file_name, format_size(*size)),
                     style,
@@ -6229,10 +7381,11 @@ fn render_duplicate_groups(f: &mut Frame, app: &mut App, area: Rect) {
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(
-                format!("Files (hash: {})", group.hash)
-            ));
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Files (hash: {})", group.hash)),
+        );
         f.render_widget(list, chunks[1]);
     } else {
         let empty = Paragraph::new("  No duplicate groups found")
@@ -6254,7 +7407,7 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([
             Constraint::Length(7),  // Summary
             Constraint::Length(12), // Bar chart
-            Constraint::Min(0),    // History list
+            Constraint::Min(0),     // History list
         ])
         .split(area);
 
@@ -6262,19 +7415,40 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
     let summary_lines = vec![
         Line::from(vec![
             Span::styled("  Total Runs: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}", app.history.total_runs), Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", app.history.total_runs),
+                Style::default()
+                    .fg(theme.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
-            Span::styled("  Total Files Processed: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}", app.history.total_files_processed), Style::default().fg(theme.success).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Total Files Processed: ",
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                format!("{}", app.history.total_files_processed),
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Total Files Removed: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}", app.history.total_files_removed), Style::default().fg(theme.error).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", app.history.total_files_removed),
+                Style::default()
+                    .fg(theme.error)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Profiles: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}", app.config.profiles.len()), Style::default().fg(theme.warning)),
+            Span::styled(
+                format!("{}", app.config.profiles.len()),
+                Style::default().fg(theme.warning),
+            ),
         ]),
     ];
     let summary = Paragraph::new(summary_lines)
@@ -6285,14 +7459,17 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
     let stats_data = app.get_stats_data();
     if !stats_data.is_empty() {
         let max_val = stats_data.iter().map(|(_, v)| *v).max().unwrap_or(1);
-        let bar_data: Vec<(&str, u64)> = stats_data.iter()
-            .map(|(label, val)| {
-                (label.as_str(), *val)
-            })
+        let bar_data: Vec<(&str, u64)> = stats_data
+            .iter()
+            .map(|(label, val)| (label.as_str(), *val))
             .collect();
 
         let barchart = BarChart::default()
-            .block(Block::default().borders(Borders::ALL).title("Files per Run (recent)"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files per Run (recent)"),
+            )
             .data(&bar_data)
             .bar_width(3)
             .bar_style(Style::default().fg(theme.primary))
@@ -6302,27 +7479,50 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         let empty = Paragraph::new("  No history yet")
             .style(Style::default().fg(theme.muted))
-            .block(Block::default().borders(Borders::ALL).title("Files per Run"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files per Run"),
+            );
         f.render_widget(empty, chunks[1]);
     }
 
     // History list
-    let history_items: Vec<ListItem> = app.history.entries.iter().rev()
+    let history_items: Vec<ListItem> = app
+        .history
+        .entries
+        .iter()
+        .rev()
         .skip(app.stats_scroll)
         .take((chunks[2].height.saturating_sub(2)) as usize)
         .map(|entry| {
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", entry.timestamp), Style::default().fg(theme.muted)),
-                Span::styled(format!("{} files ", entry.files_processed), Style::default().fg(theme.success)),
-                Span::styled(format!("{} ", format_duration(entry.duration_secs)), Style::default().fg(theme.primary)),
-                Span::styled(format!("{} errors", entry.errors), 
-                    if entry.errors > 0 { Style::default().fg(theme.error) } else { Style::default().fg(theme.muted) }),
+                Span::styled(
+                    format!("  {} ", entry.timestamp),
+                    Style::default().fg(theme.muted),
+                ),
+                Span::styled(
+                    format!("{} files ", entry.files_processed),
+                    Style::default().fg(theme.success),
+                ),
+                Span::styled(
+                    format!("{} ", format_duration(entry.duration_secs)),
+                    Style::default().fg(theme.primary),
+                ),
+                Span::styled(
+                    format!("{} errors", entry.errors),
+                    if entry.errors > 0 {
+                        Style::default().fg(theme.error)
+                    } else {
+                        Style::default().fg(theme.muted)
+                    },
+                ),
             ]))
         })
         .collect();
 
-    let list = List::new(history_items)
-        .block(Block::default().borders(Borders::ALL).title("History"));
+    let list =
+        List::new(history_items).block(Block::default().borders(Borders::ALL).title("History"));
     f.render_widget(list, chunks[2]);
 }
 
@@ -6335,23 +7535,34 @@ fn render_profiles(f: &mut Frame, app: &mut App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
     // Profile list + actions
-    let mut items: Vec<ListItem> = app.config.profiles.iter().enumerate()
+    let mut items: Vec<ListItem> = app
+        .config
+        .profiles
+        .iter()
+        .enumerate()
         .map(|(i, profile)| {
-            let prefix = if i == app.profile_selected { "▶ " } else { "  " };
+            let prefix = if i == app.profile_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.profile_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}  {} (dest: {})", prefix, profile.name, profile.config.dest),
+                format!(
+                    "{}  {} (dest: {})",
+                    prefix, profile.name, profile.config.dest
+                ),
                 style,
             )))
         })
@@ -6361,9 +7572,16 @@ fn render_profiles(f: &mut Frame, app: &mut App, area: Rect) {
     let actions = ["Clear History", "Clear Undo Log"];
     for (i, action) in actions.iter().enumerate() {
         let idx = app.config.profiles.len() + i;
-        let prefix = if idx == app.profile_selected { "▶ " } else { "  " };
+        let prefix = if idx == app.profile_selected {
+            "▶ "
+        } else {
+            "  "
+        };
         let style = if idx == app.profile_selected {
-            Style::default().fg(theme.warning).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.warning)
+                .bg(theme.bg_highlight)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.muted)
         };
@@ -6373,15 +7591,22 @@ fn render_profiles(f: &mut Frame, app: &mut App, area: Rect) {
         ))));
     }
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Profiles (Enter to load, d to delete)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Profiles (Enter to load, d to delete)"),
+    );
     f.render_widget(list, chunks[0]);
 
     // Input area
     if app.profile_adding {
         let input = Paragraph::new(format!("  Name: {}_", app.profile_input))
             .style(Style::default().fg(theme.warning))
-            .block(Block::default().borders(Borders::ALL).title("New Profile (Enter to save)"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("New Profile (Enter to save)"),
+            );
         f.render_widget(input, chunks[1]);
     } else {
         let help = Paragraph::new("  a: Add profile │ d: Delete │ Enter: Load/Execute │ Esc: Back")
@@ -6404,11 +7629,20 @@ fn render_jxl_settings(f: &mut Frame, app: &mut App, area: Rect) {
         ("Save & Back", String::new()),
     ];
 
-    let items: Vec<ListItem> = settings_items.iter().enumerate()
+    let items: Vec<ListItem> = settings_items
+        .iter()
+        .enumerate()
         .map(|(i, (label, value))| {
-            let prefix = if i == app.settings_selected { "▶ " } else { "  " };
+            let prefix = if i == app.settings_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.settings_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -6424,8 +7658,11 @@ fn render_jxl_settings(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("JXL Settings (h/l to adjust, Space to toggle)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("JXL Settings (h/l to adjust, Space to toggle)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -6439,35 +7676,61 @@ fn render_watch_mode(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // Status
+            Constraint::Length(5), // Status
             Constraint::Min(0),    // Watch dirs
             Constraint::Length(3), // Input
         ])
         .split(area);
 
     // Status
-    let status = if app.watch_active { "ACTIVE" } else { "INACTIVE" };
-    let status_color = if app.watch_active { theme.success } else { theme.muted };
+    let status = if app.watch_active {
+        "ACTIVE"
+    } else {
+        "INACTIVE"
+    };
+    let status_color = if app.watch_active {
+        theme.success
+    } else {
+        theme.muted
+    };
     let status_lines = vec![
         Line::from(vec![
             Span::styled("  Status: ", Style::default().fg(theme.muted)),
-            Span::styled(status, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                status,
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Files auto-processed: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}", app.watch_processed), Style::default().fg(theme.success)),
+            Span::styled(
+                format!("{}", app.watch_processed),
+                Style::default().fg(theme.success),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  Interval: ", Style::default().fg(theme.muted)),
-            Span::styled(format!("{}s", app.config.watch_interval_secs), Style::default().fg(theme.primary)),
+            Span::styled(
+                format!("{}s", app.config.watch_interval_secs),
+                Style::default().fg(theme.primary),
+            ),
         ]),
     ];
-    let status_p = Paragraph::new(status_lines)
-        .block(Block::default().borders(Borders::ALL).title("Watch Status (w to toggle)"));
+    let status_p = Paragraph::new(status_lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Watch Status (w to toggle)"),
+    );
     f.render_widget(status_p, chunks[0]);
 
     // Watch directories
-    let dir_items: Vec<ListItem> = app.config.watch_dirs.iter().enumerate()
+    let dir_items: Vec<ListItem> = app
+        .config
+        .watch_dirs
+        .iter()
+        .enumerate()
         .map(|(i, dir)| {
             ListItem::new(Line::from(Span::styled(
                 format!("  {}  {}", i + 1, dir),
@@ -6476,17 +7739,20 @@ fn render_watch_mode(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let dir_list = List::new(dir_items)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Watch Directories ({})", app.config.watch_dirs.len())
-        ));
+    let dir_list = List::new(dir_items).block(Block::default().borders(Borders::ALL).title(
+        format!("Watch Directories ({})", app.config.watch_dirs.len()),
+    ));
     f.render_widget(dir_list, chunks[1]);
 
     // Input
     if app.batch_adding {
         let input = Paragraph::new(format!("  Directory: {}_", app.batch_input))
             .style(Style::default().fg(theme.warning))
-            .block(Block::default().borders(Borders::ALL).title("Add Directory (Enter to confirm)"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Add Directory (Enter to confirm)"),
+            );
         f.render_widget(input, chunks[2]);
     } else {
         let help = Paragraph::new("  a: Add directory │ w: Toggle watch │ Esc: Back")
@@ -6509,7 +7775,11 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
         SortField::Date => "Date",
         SortField::Type => "Type",
     };
-    let sort_dir = if app.sort_config.ascending { "↑ Asc" } else { "↓ Desc" };
+    let sort_dir = if app.sort_config.ascending {
+        "↑ Asc"
+    } else {
+        "↓ Desc"
+    };
 
     let settings_items = vec![
         ("Extensions", app.filter.extensions.join(", ")),
@@ -6520,11 +7790,20 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
         ("Apply & Back", String::new()),
     ];
 
-    let items: Vec<ListItem> = settings_items.iter().enumerate()
+    let items: Vec<ListItem> = settings_items
+        .iter()
+        .enumerate()
         .map(|(i, (label, value))| {
-            let prefix = if i == app.filter_selected { "▶ " } else { "  " };
+            let prefix = if i == app.filter_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.filter_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -6537,8 +7816,11 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Filter & Sort (h/l to adjust, Enter to apply)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Filter & Sort (h/l to adjust, Enter to apply)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -6556,24 +7838,39 @@ fn render_info_panel(f: &mut Frame, app: &mut App, area: Rect) {
 
     // File list
     let visible_height = chunks[0].height.saturating_sub(2) as usize;
-    let start = if app.info_selected >= visible_height { app.info_selected - visible_height + 1 } else { 0 };
+    let start = if app.info_selected >= visible_height {
+        app.info_selected - visible_height + 1
+    } else {
+        0
+    };
     let end = (start + visible_height).min(app.preview_items.len());
 
-    let items: Vec<ListItem> = app.preview_items[start..end].iter().enumerate()
+    let items: Vec<ListItem> = app.preview_items[start..end]
+        .iter()
+        .enumerate()
         .map(|(i, (old, _))| {
             let idx = start + i;
-            let prefix = if idx == app.info_selected { "▶ " } else { "  " };
+            let prefix = if idx == app.info_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if idx == app.info_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(format!("{}{}", prefix, old), style)))
+            ListItem::new(Line::from(Span::styled(
+                format!("{}{}", prefix, old),
+                style,
+            )))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Files"));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Files"));
     f.render_widget(list, chunks[0]);
 
     // Info panel
@@ -6582,17 +7879,23 @@ fn render_info_panel(f: &mut Frame, app: &mut App, area: Rect) {
         let path = PathBuf::from(&app.config.dest).join(old);
         let info = app.get_file_info(&path.to_string_lossy());
 
-        let items: Vec<ListItem> = info.iter()
+        let items: Vec<ListItem> = info
+            .iter()
             .map(|(key, value)| {
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("  {}: ", key), Style::default().fg(theme.primary).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("  {}: ", key),
+                        Style::default()
+                            .fg(theme.primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(value.clone(), Style::default().fg(Color::White)),
                 ]))
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("File Info"));
+        let list =
+            List::new(items).block(Block::default().borders(Borders::ALL).title("File Info"));
         f.render_widget(list, chunks[1]);
     } else {
         let empty = Paragraph::new("  Select a file to view info")
@@ -6620,18 +7923,32 @@ fn render_confirm_dialog(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  {}", action_text),
-            Style::default().fg(theme.warning).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(vec![
             Span::styled(
                 format!("  {} Yes", if app.confirm_yes { "▶" } else { " " }),
-                if app.confirm_yes { Style::default().fg(theme.success).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White) },
+                if app.confirm_yes {
+                    Style::default()
+                        .fg(theme.success)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                },
             ),
             Span::raw("    "),
             Span::styled(
                 format!("{} No", if !app.confirm_yes { "▶" } else { " " }),
-                if !app.confirm_yes { Style::default().fg(theme.error).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::White) },
+                if !app.confirm_yes {
+                    Style::default()
+                        .fg(theme.error)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                },
             ),
         ]),
         Line::from(""),
@@ -6655,7 +7972,12 @@ fn render_confirm_dialog(f: &mut Frame, app: &mut App, area: Rect) {
         .title(" Confirm ");
     f.render_widget(bg, dialog_area);
 
-    let inner = Rect::new(dialog_area.x + 1, dialog_area.y + 1, dialog_area.width - 2, dialog_area.height - 2);
+    let inner = Rect::new(
+        dialog_area.x + 1,
+        dialog_area.y + 1,
+        dialog_area.width - 2,
+        dialog_area.height - 2,
+    );
     let dialog = Paragraph::new(dialog_lines);
     f.render_widget(dialog, inner);
 }
@@ -6676,10 +7998,16 @@ fn render_size_compare(f: &mut Frame, app: &mut App, area: Rect) {
     // Summary
     let total_orig: u64 = app.size_comparisons.iter().map(|c| c.original_size).sum();
     let total_conv: u64 = app.size_comparisons.iter().map(|c| c.converted_size).sum();
-    let total_reduction = if total_orig > 0 { (1.0 - total_conv as f64 / total_orig as f64) * 100.0 } else { 0.0 };
+    let total_reduction = if total_orig > 0 {
+        (1.0 - total_conv as f64 / total_orig as f64) * 100.0
+    } else {
+        0.0
+    };
     let summary = Paragraph::new(format!(
         "  Total: {} → {} (↓{:.1}%)",
-        format_size(total_orig), format_size(total_conv), total_reduction
+        format_size(total_orig),
+        format_size(total_conv),
+        total_reduction
     ))
     .style(Style::default().fg(theme.success))
     .block(Block::default().borders(Borders::ALL).title("Summary"));
@@ -6687,29 +8015,54 @@ fn render_size_compare(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Table
     let visible = chunks[1].height.saturating_sub(2) as usize;
-    let start = app.size_compare_scroll.min(app.size_comparisons.len().saturating_sub(visible));
+    let start = app
+        .size_compare_scroll
+        .min(app.size_comparisons.len().saturating_sub(visible));
     let end = (start + visible).min(app.size_comparisons.len());
 
-    let header = format!("  {:<30} {:>10} {:>10} {:>8}", "Filename", "Original", "Converted", "Reduce");
+    let header = format!(
+        "  {:<30} {:>10} {:>10} {:>8}",
+        "Filename", "Original", "Converted", "Reduce"
+    );
     let mut lines = vec![
-        Line::from(Span::styled(header, Style::default().fg(theme.primary).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled("  ────────────────────────────────────────────────────────────────", Style::default().fg(theme.muted))),
+        Line::from(Span::styled(
+            header,
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            "  ────────────────────────────────────────────────────────────────",
+            Style::default().fg(theme.muted),
+        )),
     ];
 
     for comp in &app.size_comparisons[start..end] {
         let bar_len = (comp.reduction_pct / 5.0) as usize;
         let bar = "█".repeat(bar_len);
-        let line = format!("  {:<30} {:>10} {:>10} {:>6.1}% {}",
-            comp.filename, format_size(comp.original_size), format_size(comp.converted_size),
-            comp.reduction_pct, bar);
-        let color = if comp.reduction_pct > 50.0 { theme.success } else if comp.reduction_pct > 20.0 { theme.warning } else { theme.error };
+        let line = format!(
+            "  {:<30} {:>10} {:>10} {:>6.1}% {}",
+            comp.filename,
+            format_size(comp.original_size),
+            format_size(comp.converted_size),
+            comp.reduction_pct,
+            bar
+        );
+        let color = if comp.reduction_pct > 50.0 {
+            theme.success
+        } else if comp.reduction_pct > 20.0 {
+            theme.warning
+        } else {
+            theme.error
+        };
         lines.push(Line::from(Span::styled(line, Style::default().fg(color))));
     }
 
-    let list = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Size Comparison ({})", app.size_comparisons.len())
-        ));
+    let list = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Size Comparison ({})", app.size_comparisons.len())),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -6718,26 +8071,38 @@ fn render_error_panel(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
     let visible = area.height.saturating_sub(2) as usize;
-    let start = app.error_scroll.min(app.error_details.len().saturating_sub(visible));
+    let start = app
+        .error_scroll
+        .min(app.error_details.len().saturating_sub(visible));
     let end = (start + visible).min(app.error_details.len());
 
     let mut lines = vec![];
     if app.error_details.is_empty() {
-        lines.push(Line::from(Span::styled("  No errors recorded", Style::default().fg(theme.success))));
+        lines.push(Line::from(Span::styled(
+            "  No errors recorded",
+            Style::default().fg(theme.success),
+        )));
     } else {
         for err in &app.error_details[start..end] {
             lines.push(Line::from(vec![
-                Span::styled(format!("  [{}] ", err.timestamp), Style::default().fg(theme.muted)),
-                Span::styled(format!("{}: ", err.filename), Style::default().fg(theme.warning)),
+                Span::styled(
+                    format!("  [{}] ", err.timestamp),
+                    Style::default().fg(theme.muted),
+                ),
+                Span::styled(
+                    format!("{}: ", err.filename),
+                    Style::default().fg(theme.warning),
+                ),
                 Span::styled(err.error_msg.clone(), Style::default().fg(theme.error)),
             ]));
         }
     }
 
-    let list = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Error Details ({})", app.error_details.len())
-        ));
+    let list = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Error Details ({})", app.error_details.len())),
+    );
     f.render_widget(list, area);
 }
 
@@ -6745,26 +8110,47 @@ fn render_error_panel(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_presets(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
-    let items: Vec<ListItem> = app.presets.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .presets
+        .iter()
+        .enumerate()
         .map(|(i, preset)| {
-            let prefix = if i == app.preset_selected { "▶ " } else { "  " };
+            let prefix = if i == app.preset_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let active = if i == app.active_preset { " ✓" } else { "" };
             let style = if i == app.preset_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else if i == app.active_preset {
                 Style::default().fg(theme.success)
             } else {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}  {} (q:{} lossless:{}) {}{}", prefix, preset.name, preset.quality, preset.lossless, preset.description, active),
+                format!(
+                    "{}  {} (q:{} lossless:{}) {}{}",
+                    prefix,
+                    preset.name,
+                    preset.quality,
+                    preset.lossless,
+                    preset.description,
+                    active
+                ),
                 style,
             )))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Conversion Presets (Enter to apply)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Conversion Presets (Enter to apply)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -6777,31 +8163,64 @@ fn render_scheduler(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
-    let items: Vec<ListItem> = app.scheduler_jobs.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .scheduler_jobs
+        .iter()
+        .enumerate()
         .map(|(i, job)| {
-            let prefix = if i == app.scheduler_selected { "▶ " } else { "  " };
+            let prefix = if i == app.scheduler_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let status = if job.enabled { "● ON" } else { "○ OFF" };
-            let status_color = if job.enabled { theme.success } else { theme.muted };
+            let status_color = if job.enabled {
+                theme.success
+            } else {
+                theme.muted
+            };
             let style = if i == app.scheduler_selected {
                 Style::default().fg(theme.accent).bg(theme.bg_highlight)
             } else {
                 Style::default().fg(Color::White)
             };
-            let days: Vec<&str> = job.days.iter().map(|d| match d {
-                0 => "Sun", 1 => "Mon", 2 => "Tue", 3 => "Wed",
-                4 => "Thu", 5 => "Fri", 6 => "Sat", _ => "?",
-            }).collect();
+            let days: Vec<&str> = job
+                .days
+                .iter()
+                .map(|d| match d {
+                    0 => "Sun",
+                    1 => "Mon",
+                    2 => "Tue",
+                    3 => "Wed",
+                    4 => "Thu",
+                    5 => "Fri",
+                    6 => "Sat",
+                    _ => "?",
+                })
+                .collect();
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{}  {} ", prefix, status), Style::default().fg(status_color)),
-                Span::styled(format!("{:02}:{:02} {} ", job.hour, job.minute, days.join(",")),
-                    if app.scheduler_editing && i == app.scheduler_selected { Style::default().fg(theme.warning) } else { style }),
+                Span::styled(
+                    format!("{}  {} ", prefix, status),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(
+                    format!("{:02}:{:02} {} ", job.hour, job.minute, days.join(",")),
+                    if app.scheduler_editing && i == app.scheduler_selected {
+                        Style::default().fg(theme.warning)
+                    } else {
+                        style
+                    },
+                ),
                 Span::styled(format!(" {}", job.name), Style::default().fg(theme.primary)),
             ]))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Process Scheduler"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Process Scheduler"),
+    );
     f.render_widget(list, chunks[0]);
 
     let help = Paragraph::new("  a: Add │ e: Edit │ t: Toggle │ d: Delete │ Esc: Back")
@@ -6815,20 +8234,30 @@ fn render_history_export(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
     let formats = ["CSV (Excel compatible)", "JSON (structured data)"];
-    let items: Vec<ListItem> = formats.iter().enumerate()
+    let items: Vec<ListItem> = formats
+        .iter()
+        .enumerate()
         .map(|(i, fmt)| {
             let prefix = if i == app.export_format { "▶ " } else { "  " };
             let style = if i == app.export_format {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(format!("{}  {}", prefix, fmt), style)))
+            ListItem::new(Line::from(Span::styled(
+                format!("{}  {}", prefix, fmt),
+                style,
+            )))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Export Format (Enter to export)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Export Format (Enter to export)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -6854,11 +8283,20 @@ fn render_theme_editor(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
-    let items: Vec<ListItem> = colors.iter().enumerate()
+    let items: Vec<ListItem> = colors
+        .iter()
+        .enumerate()
         .map(|(i, (name, color))| {
-            let prefix = if i == app.theme_edit_selected { "▶ " } else { "  " };
+            let prefix = if i == app.theme_edit_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.theme_edit_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -6884,14 +8322,14 @@ fn render_theme_editor(f: &mut Frame, app: &mut App, area: Rect) {
                 _ => "(?,?,?)".to_string(),
             };
             let _sample = Block::default().style(Style::default().fg(*color));
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}  {:<12} {} ", prefix, name, rgb), style),
-            ]))
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}  {:<12} {} ", prefix, name, rgb),
+                style,
+            )]))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Theme Editor"));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Theme Editor"));
     f.render_widget(list, chunks[0]);
 
     let help = Paragraph::new("  j/k: Color │ h/l: Channel │ a: Save New │ Enter: Done")
@@ -6911,13 +8349,22 @@ fn render_dashboard_custom(f: &mut Frame, app: &mut App, area: Rect) {
         ("Compression", app.widget_layout.show_compression),
     ];
 
-    let items: Vec<ListItem> = widgets.iter().enumerate()
+    let items: Vec<ListItem> = widgets
+        .iter()
+        .enumerate()
         .map(|(i, (name, enabled))| {
-            let prefix = if i == app.dashboard_selected { "▶ " } else { "  " };
+            let prefix = if i == app.dashboard_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let status = if *enabled { "✓ ON" } else { "✗ OFF" };
             let status_color = if *enabled { theme.success } else { theme.error };
             let style = if i == app.dashboard_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -6928,8 +8375,11 @@ fn render_dashboard_custom(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Dashboard Widgets (Space to toggle, Enter to save)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Dashboard Widgets (Space to toggle, Enter to save)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -6944,13 +8394,24 @@ fn render_compression_graph(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Bar chart
     if !app.compression_stats.is_empty() {
-        let max_count = app.compression_stats.iter().map(|s| s.count as u64).max().unwrap_or(1);
-        let bar_data: Vec<(&str, u64)> = app.compression_stats.iter()
+        let max_count = app
+            .compression_stats
+            .iter()
+            .map(|s| s.count as u64)
+            .max()
+            .unwrap_or(1);
+        let bar_data: Vec<(&str, u64)> = app
+            .compression_stats
+            .iter()
             .map(|s| (s.format.as_str(), s.count as u64))
             .collect();
 
         let barchart = BarChart::default()
-            .block(Block::default().borders(Borders::ALL).title("Files by Format"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files by Format"),
+            )
             .data(&bar_data)
             .bar_width(4)
             .bar_style(Style::default().fg(theme.primary))
@@ -6960,35 +8421,64 @@ fn render_compression_graph(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         let empty = Paragraph::new("  No data. Run Size Comparison first.")
             .style(Style::default().fg(theme.muted))
-            .block(Block::default().borders(Borders::ALL).title("Files by Format"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files by Format"),
+            );
         f.render_widget(empty, chunks[0]);
     }
 
     // Detail list
     let visible = chunks[1].height.saturating_sub(2) as usize;
-    let start = app.compress_scroll.min(app.compression_stats.len().saturating_sub(visible));
+    let start = app
+        .compress_scroll
+        .min(app.compression_stats.len().saturating_sub(visible));
     let end = (start + visible).min(app.compression_stats.len());
 
     let mut lines = vec![];
     for stat in &app.compression_stats[start..end] {
         let ratio = if stat.original_size > 0 {
             (1.0 - stat.converted_size as f64 / stat.original_size as f64) * 100.0
-        } else { 0.0 };
+        } else {
+            0.0
+        };
         let bar_len = (ratio / 5.0) as usize;
         let bar = "█".repeat(bar_len);
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<8} ", stat.format.to_uppercase()), Style::default().fg(theme.primary)),
-            Span::styled(format!("{} → {} ", format_size(stat.original_size), format_size(stat.converted_size)),
-                Style::default().fg(Color::White)),
-            Span::styled(format!("↓{:.1}% ", ratio), 
-                if ratio > 50.0 { Style::default().fg(theme.success) } else { Style::default().fg(theme.warning) }),
+            Span::styled(
+                format!("  {:<8} ", stat.format.to_uppercase()),
+                Style::default().fg(theme.primary),
+            ),
+            Span::styled(
+                format!(
+                    "{} → {} ",
+                    format_size(stat.original_size),
+                    format_size(stat.converted_size)
+                ),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled(
+                format!("↓{:.1}% ", ratio),
+                if ratio > 50.0 {
+                    Style::default().fg(theme.success)
+                } else {
+                    Style::default().fg(theme.warning)
+                },
+            ),
             Span::styled(bar, Style::default().fg(theme.accent)),
-            Span::styled(format!(" ({} files)", stat.count), Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" ({} files)", stat.count),
+                Style::default().fg(theme.muted),
+            ),
         ]));
     }
 
-    let detail = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Compression by Format"));
+    let detail = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Compression by Format"),
+    );
     f.render_widget(detail, chunks[1]);
 }
 
@@ -7001,11 +8491,21 @@ fn render_file_classify(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
-    let items: Vec<ListItem> = app.classify_rules.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .classify_rules
+        .iter()
+        .enumerate()
         .map(|(i, (pattern, folder))| {
-            let prefix = if i == app.classify_selected { "▶ " } else { "  " };
+            let prefix = if i == app.classify_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.classify_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -7016,16 +8516,20 @@ fn render_file_classify(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Classification Rules ({})", app.classify_rules.len())
-        ));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(format!(
+        "Classification Rules ({})",
+        app.classify_rules.len()
+    )));
     f.render_widget(list, chunks[0]);
 
     if app.classify_adding {
         let input = Paragraph::new(format!("  pattern:folder = {}_", app.classify_input))
             .style(Style::default().fg(theme.warning))
-            .block(Block::default().borders(Borders::ALL).title("Add Rule (Enter to confirm)"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Add Rule (Enter to confirm)"),
+            );
         f.render_widget(input, chunks[1]);
     } else {
         let help = Paragraph::new("  a: Add │ d: Delete │ r: Run Classification │ Esc: Back")
@@ -7045,15 +8549,22 @@ fn render_meta_edit(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let visible = chunks[0].height.saturating_sub(2) as usize;
-    let start = app.meta_scroll.min(app.meta_files.len().saturating_sub(visible));
+    let start = app
+        .meta_scroll
+        .min(app.meta_files.len().saturating_sub(visible));
     let end = (start + visible).min(app.meta_files.len());
 
     let mut lines = vec![
         Line::from(Span::styled(
             format!("  {:>4}  {:<40}  {}", " ", "Filename", "Select"),
-            Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(theme.primary)
+                .add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::styled("  ─────────────────────────────────────────────────────────", Style::default().fg(theme.muted))),
+        Line::from(Span::styled(
+            "  ─────────────────────────────────────────────────────────",
+            Style::default().fg(theme.muted),
+        )),
     ];
 
     for (i, (name, selected)) in app.meta_files[start..end].iter().enumerate() {
@@ -7073,20 +8584,31 @@ fn render_meta_edit(f: &mut Frame, app: &mut App, area: Rect) {
         )));
     }
 
-    let list = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(
-            format!("Metadata Editor ({}/{} selected)", 
-                app.meta_files.iter().filter(|(_, s)| *s).count(), app.meta_files.len())
-        ));
+    let list = Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(format!(
+        "Metadata Editor ({}/{} selected)",
+        app.meta_files.iter().filter(|(_, s)| *s).count(),
+        app.meta_files.len()
+    )));
     f.render_widget(list, chunks[0]);
 
     let fields = ["DateTime", "Artist", "Remove All"];
-    let field_str: Vec<String> = fields.iter().enumerate()
-        .map(|(i, f)| if i == app.meta_field { format!("[{}]", f) } else { f.to_string() })
+    let field_str: Vec<String> = fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            if i == app.meta_field {
+                format!("[{}]", f)
+            } else {
+                f.to_string()
+            }
+        })
         .collect();
-    let help = Paragraph::new(format!("  Tab: Field ({}) │ x: Remove Meta │ a: Select All │ Esc: Back", field_str.join("/")))
-        .style(Style::default().fg(theme.muted))
-        .block(Block::default().borders(Borders::ALL).title("Actions"));
+    let help = Paragraph::new(format!(
+        "  Tab: Field ({}) │ x: Remove Meta │ a: Select All │ Esc: Back",
+        field_str.join("/")
+    ))
+    .style(Style::default().fg(theme.muted))
+    .block(Block::default().borders(Borders::ALL).title("Actions"));
     f.render_widget(help, chunks[1]);
 }
 
@@ -7100,26 +8622,44 @@ fn render_config_io(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let options = ["Export Config", "Import Config"];
-    let items: Vec<ListItem> = options.iter().enumerate()
+    let items: Vec<ListItem> = options
+        .iter()
+        .enumerate()
         .map(|(i, opt)| {
-            let prefix = if i == app.config_io_selected { "▶ " } else { "  " };
+            let prefix = if i == app.config_io_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let style = if i == app.config_io_selected {
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(format!("{}  {}", prefix, opt), style)))
+            ListItem::new(Line::from(Span::styled(
+                format!("{}  {}", prefix, opt),
+                style,
+            )))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Config Import/Export"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Config Import/Export"),
+    );
     f.render_widget(list, chunks[0]);
 
     if app.config_io_adding {
         let input = Paragraph::new(format!("  Path: {}_", app.config_io_path))
             .style(Style::default().fg(theme.warning))
-            .block(Block::default().borders(Borders::ALL).title("Import Path (Enter to confirm)"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Import Path (Enter to confirm)"),
+            );
         f.render_widget(input, chunks[1]);
     } else {
         let help = Paragraph::new("  e: Export │ i: Import │ Esc: Back")
@@ -7144,25 +8684,41 @@ fn render_plugins(f: &mut Frame, app: &mut App, area: Rect) {
             .block(Block::default().borders(Borders::ALL).title("Plugins"));
         f.render_widget(empty, chunks[0]);
     } else {
-        let items: Vec<ListItem> = app.plugins.iter().enumerate()
+        let items: Vec<ListItem> = app
+            .plugins
+            .iter()
+            .enumerate()
             .map(|(i, plugin)| {
-                let prefix = if i == app.plugin_selected { "▶ " } else { "  " };
+                let prefix = if i == app.plugin_selected {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 let status = if plugin.enabled { "● ON" } else { "○ OFF" };
-                let status_color = if plugin.enabled { theme.success } else { theme.muted };
+                let status_color = if plugin.enabled {
+                    theme.success
+                } else {
+                    theme.muted
+                };
                 let style = if i == app.plugin_selected {
-                    Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(theme.accent)
+                        .bg(theme.bg_highlight)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("{}  {} ", prefix, status), Style::default().fg(status_color)),
+                    Span::styled(
+                        format!("{}  {} ", prefix, status),
+                        Style::default().fg(status_color),
+                    ),
                     Span::styled(format!("{} - {}", plugin.name, plugin.description), style),
                 ]))
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Plugins"));
+        let list = List::new(items).block(Block::default().borders(Borders::ALL).title("Plugins"));
         f.render_widget(list, chunks[0]);
     }
 
@@ -7176,13 +8732,23 @@ fn render_plugins(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
-    let items: Vec<ListItem> = app.statusbar_items.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .statusbar_items
+        .iter()
+        .enumerate()
         .map(|(i, (name, enabled))| {
-            let prefix = if i == app.statusbar_selected { "▶ " } else { "  " };
+            let prefix = if i == app.statusbar_selected {
+                "▶ "
+            } else {
+                "  "
+            };
             let status = if *enabled { "✓" } else { "✗" };
             let status_color = if *enabled { theme.success } else { theme.error };
             let style = if i == app.statusbar_selected {
-                Style::default().fg(theme.accent).bg(theme.bg_highlight).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent)
+                    .bg(theme.bg_highlight)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -7193,8 +8759,11 @@ fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Statusbar Items (Space to toggle, Enter to save)"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Statusbar Items (Space to toggle, Enter to save)"),
+    );
     f.render_widget(list, area);
 }
 
@@ -7205,7 +8774,11 @@ fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
 fn is_image_file(path: &PathBuf) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| DEFAULT_IMAGE_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext))))
+        .map(|ext| {
+            DEFAULT_IMAGE_EXTENSIONS
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
+        })
         .unwrap_or(false)
 }
 
@@ -7233,7 +8806,9 @@ fn calculate_sha256(path: &PathBuf) -> Result<String, Box<dyn std::error::Error>
 fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
     let file = std::fs::File::open(path).ok()?;
     let mut bufreader = std::io::BufReader::new(file);
-    let exif = exif::Reader::new().read_from_container(&mut bufreader).ok()?;
+    let exif = exif::Reader::new()
+        .read_from_container(&mut bufreader)
+        .ok()?;
 
     let mut entries = Vec::new();
 
@@ -7272,7 +8847,11 @@ fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
         }
     }
 
-    if entries.is_empty() { None } else { Some(entries) }
+    if entries.is_empty() {
+        None
+    } else {
+        Some(entries)
+    }
 }
 
 // ============================================================
@@ -7282,7 +8861,9 @@ fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
 /// Average Hash (aHash): resize to 8x8 grayscale, compare to mean
 fn calculate_ahash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
     let img = image::open(path)?;
-    let gray = img.resize_exact(8, 8, image::imageops::FilterType::Lanczos3).to_luma8();
+    let gray = img
+        .resize_exact(8, 8, image::imageops::FilterType::Lanczos3)
+        .to_luma8();
     let pixels: Vec<u8> = gray.pixels().map(|p| p[0]).collect();
     let mean: u64 = pixels.iter().map(|&p| p as u64).sum::<u64>() / 64;
     let mut hash: u64 = 0;
@@ -7297,7 +8878,9 @@ fn calculate_ahash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
 /// Difference Hash (dHash): compare adjacent pixels horizontally
 fn calculate_dhash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
     let img = image::open(path)?;
-    let gray = img.resize_exact(9, 8, image::imageops::FilterType::Lanczos3).to_luma8();
+    let gray = img
+        .resize_exact(9, 8, image::imageops::FilterType::Lanczos3)
+        .to_luma8();
     let pixels: Vec<u8> = gray.pixels().map(|p| p[0]).collect();
     let mut hash: u64 = 0;
     for row in 0..8 {
@@ -7356,7 +8939,11 @@ fn get_unique_filename(path: &PathBuf, name: &str) -> Result<String, Box<dyn std
     // Separate stem and extension from the name
     let name_path = PathBuf::from(name);
     let stem = name_path.file_stem().unwrap().to_string_lossy().to_string();
-    let ext = name_path.extension().unwrap_or_default().to_string_lossy().to_string();
+    let ext = name_path
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
 
     for i in 0..10 {
         let candidate = if ext.is_empty() {
@@ -7443,13 +9030,22 @@ fn resize_images(dest: &str, max_w: u32, max_h: u32, log: &dyn Fn(String)) -> us
     let mut count = 0;
     let entries: Vec<_> = fs::read_dir(dest)
         .ok()
-        .map(|d| d.flatten().filter(|e| {
-            let p = e.path();
-            p.is_file() && {
-                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string().to_lowercase();
-                ["jpg", "jpeg", "png", "bmp", "webp", "tiff"].contains(&ext.as_str())
-            }
-        }).collect())
+        .map(|d| {
+            d.flatten()
+                .filter(|e| {
+                    let p = e.path();
+                    p.is_file() && {
+                        let ext = p
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_string()
+                            .to_lowercase();
+                        ["jpg", "jpeg", "png", "bmp", "webp", "tiff"].contains(&ext.as_str())
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     for entry in entries {
@@ -7464,7 +9060,14 @@ fn resize_images(dest: &str, max_w: u32, max_h: u32, log: &dyn Fn(String)) -> us
                 if let Err(e) = resized.save(&path) {
                     log(format!("  Resize error {}: {}", path.display(), e));
                 } else {
-                    log(format!("  Resized: {} ({}x{} -> {}x{})", path.display(), w, h, new_w, new_h));
+                    log(format!(
+                        "  Resized: {} ({}x{} -> {}x{})",
+                        path.display(),
+                        w,
+                        h,
+                        new_w,
+                        new_h
+                    ));
                     count += 1;
                 }
             }
@@ -7483,13 +9086,22 @@ fn add_watermark(dest: &str, text: &str, log: &dyn Fn(String)) -> usize {
     let mut count = 0;
     let entries: Vec<_> = fs::read_dir(dest)
         .ok()
-        .map(|d| d.flatten().filter(|e| {
-            let p = e.path();
-            p.is_file() && {
-                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_string().to_lowercase();
-                ["jpg", "jpeg", "png", "bmp", "webp"].contains(&ext.as_str())
-            }
-        }).collect())
+        .map(|d| {
+            d.flatten()
+                .filter(|e| {
+                    let p = e.path();
+                    p.is_file() && {
+                        let ext = p
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_string()
+                            .to_lowercase();
+                        ["jpg", "jpeg", "png", "bmp", "webp"].contains(&ext.as_str())
+                    }
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     for entry in entries {
@@ -7527,10 +9139,7 @@ fn add_watermark(dest: &str, text: &str, log: &dyn Fn(String)) -> usize {
 fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
     let path_info = if app.preview_image_path.is_empty() {
@@ -7539,10 +9148,19 @@ fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
         app.preview_image_path.clone()
     };
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🖼️  Image Preview", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  🖼️  Image Preview",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(format!("  │  {}", path_info)),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Magenta)))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta)),
+    )
     .alignment(ratatui::layout::Alignment::Left);
     f.render_widget(header, chunks[0]);
 
@@ -7554,24 +9172,40 @@ fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
                 .split(chunks[1]);
 
             // ASCII art
-            let ascii_text: Vec<Line> = preview.ascii_lines.iter()
+            let ascii_text: Vec<Line> = preview
+                .ascii_lines
+                .iter()
                 .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(Color::White))))
                 .collect();
-            let ascii_block = Paragraph::new(ascii_text)
-                .block(Block::default()
+            let ascii_block = Paragraph::new(ascii_text).block(
+                Block::default()
                     .title(format!(" {}x{} ", preview.width, preview.height))
                     .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)));
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
             f.render_widget(ascii_block, inner[0]);
 
             // File info
             let info_lines = vec![
-                Line::from(vec![Span::styled("File: ", Style::default().fg(Color::Yellow)), Span::raw(&preview.filename)]),
-                Line::from(vec![Span::styled("Size: ", Style::default().fg(Color::Yellow)), Span::raw(format!("{}x{}", preview.width, preview.height))]),
-                Line::from(vec![Span::styled("Lines: ", Style::default().fg(Color::Yellow)), Span::raw(format!("{}", preview.ascii_lines.len()))]),
+                Line::from(vec![
+                    Span::styled("File: ", Style::default().fg(Color::Yellow)),
+                    Span::raw(&preview.filename),
+                ]),
+                Line::from(vec![
+                    Span::styled("Size: ", Style::default().fg(Color::Yellow)),
+                    Span::raw(format!("{}x{}", preview.width, preview.height)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Lines: ", Style::default().fg(Color::Yellow)),
+                    Span::raw(format!("{}", preview.ascii_lines.len())),
+                ]),
             ];
-            let info_block = Paragraph::new(info_lines)
-                .block(Block::default().title(" Info ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+            let info_block = Paragraph::new(info_lines).block(
+                Block::default()
+                    .title(" Info ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
             f.render_widget(info_block, inner[1]);
         }
         None => {
@@ -7590,10 +9224,19 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  📑  Split Pane View", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  📑  Split Pane View",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  │  [Tab]パネル切替  [←→]リサイズ  [q]戻る"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(header, chunks[0]);
 
     let panes = Layout::default()
@@ -7602,25 +9245,45 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .split(chunks[1]);
 
     // Left pane - batch queue
-    let left_items: Vec<ListItem> = app.batch_queue.iter().enumerate().map(|(i, job)| {
-        let fname = std::path::Path::new(&job.path).file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| job.path.clone());
-        ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
-    }).collect();
-    let left_list = List::new(left_items)
-        .block(Block::default().title(" Source Files ").borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    let left_items: Vec<ListItem> = app
+        .batch_queue
+        .iter()
+        .enumerate()
+        .map(|(i, job)| {
+            let fname = std::path::Path::new(&job.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| job.path.clone());
+            ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
+        })
+        .collect();
+    let left_list = List::new(left_items).block(
+        Block::default()
+            .title(" Source Files ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(left_list, panes[0]);
 
     // Right pane - dest dir
-    let right_items: Vec<ListItem> = app.duplicate_groups.iter().flat_map(|g| g.files.iter()).map(|df| {
-        let fname = std::path::Path::new(&df.0).file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| df.0.clone());
-        ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
-    }).collect();
-    let right_list = List::new(right_items)
-        .block(Block::default().title(" Destination Files ").borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)));
+    let right_items: Vec<ListItem> = app
+        .duplicate_groups
+        .iter()
+        .flat_map(|g| g.files.iter())
+        .map(|df| {
+            let fname = std::path::Path::new(&df.0)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| df.0.clone());
+            ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
+        })
+        .collect();
+    let right_list = List::new(right_items).block(
+        Block::default()
+            .title(" Destination Files ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     f.render_widget(right_list, panes[1]);
 }
 
@@ -7631,31 +9294,52 @@ fn render_quick_actions(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  ⚡  Quick Actions", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  ⚡  Quick Actions",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  │  [↑↓]選択  [Enter]実行  [q]戻る"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow)),
+    );
     f.render_widget(header, chunks[0]);
 
-    let items: Vec<ListItem> = app.quick_actions.iter().enumerate().map(|(i, (label, _))| {
-        let style = if i == app.quick_selected {
-            Style::default().fg(Color::Black).bg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        let icon = match i {
-            0 => " ",
-            1 => " ",
-            2 => " ",
-            3 => " ",
-            4 => " ",
-            _ => " ",
-        };
-        ListItem::new(Line::from(Span::styled(format!("  {} {}", icon, label), style)))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .quick_actions
+        .iter()
+        .enumerate()
+        .map(|(i, (label, _))| {
+            let style = if i == app.quick_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let icon = match i {
+                0 => " ",
+                1 => " ",
+                2 => " ",
+                3 => " ",
+                4 => " ",
+                _ => " ",
+            };
+            ListItem::new(Line::from(Span::styled(
+                format!("  {} {}", icon, label),
+                style,
+            )))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" アクション ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" アクション ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -7666,10 +9350,22 @@ fn render_recent_files(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  📂  Recent Files", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  {} files  │  [↑↓]選択  [Enter]プレビュー  [q]戻る", app.recent_files.len())),
+        Span::styled(
+            "  📂  Recent Files",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  {} files  │  [↑↓]選択  [Enter]プレビュー  [q]戻る",
+            app.recent_files.len()
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.recent_files.is_empty() {
@@ -7680,25 +9376,41 @@ fn render_recent_files(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app.recent_files.iter().enumerate().map(|(i, rf)| {
-        let fname = std::path::Path::new(&rf.path).file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| rf.path.clone());
-        let size_str = if rf.size > 1_000_000 {
-            format!("{:.1} MB", rf.size as f64 / 1_000_000.0)
-        } else {
-            format!("{:.1} KB", rf.size as f64 / 1_000.0)
-        };
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("  {} ", fname), Style::default().fg(Color::White)),
-            Span::styled(format!("[{}] ", size_str), Style::default().fg(Color::DarkGray)),
-            Span::styled(format!("{} ", rf.file_type), Style::default().fg(Color::Cyan)),
-            Span::styled(&rf.processed_at, Style::default().fg(Color::DarkGray)),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .recent_files
+        .iter()
+        .enumerate()
+        .map(|(i, rf)| {
+            let fname = std::path::Path::new(&rf.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| rf.path.clone());
+            let size_str = if rf.size > 1_000_000 {
+                format!("{:.1} MB", rf.size as f64 / 1_000_000.0)
+            } else {
+                format!("{:.1} KB", rf.size as f64 / 1_000.0)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("  {} ", fname), Style::default().fg(Color::White)),
+                Span::styled(
+                    format!("[{}] ", size_str),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("{} ", rf.file_type),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(&rf.processed_at, Style::default().fg(Color::DarkGray)),
+            ]))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" 最近のファイル ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" 最近のファイル ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -7709,10 +9421,22 @@ fn render_tag_system(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🏷️  Tag System", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  {} tagged patterns  │  [↑↓]選択  [a]タグ追加  [d]削除  [q]戻る", app.file_tags.len())),
+        Span::styled(
+            "  🏷️  Tag System",
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  {} tagged patterns  │  [↑↓]選択  [a]タグ追加  [d]削除  [q]戻る",
+            app.file_tags.len()
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Blue)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Blue)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.file_tags.is_empty() {
@@ -7723,21 +9447,33 @@ fn render_tag_system(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app.file_tags.iter().enumerate().map(|(i, ft)| {
-        let style = if i == app.tag_selected {
-            Style::default().fg(Color::Black).bg(Color::Blue)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        let tags_str = ft.tags.join(", ");
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("  📁 {} ", ft.file_pattern), style),
-            Span::styled(format!("[{}]", tags_str), Style::default().fg(Color::Yellow)),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .file_tags
+        .iter()
+        .enumerate()
+        .map(|(i, ft)| {
+            let style = if i == app.tag_selected {
+                Style::default().fg(Color::Black).bg(Color::Blue)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let tags_str = ft.tags.join(", ");
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("  📁 {} ", ft.file_pattern), style),
+                Span::styled(
+                    format!("[{}]", tags_str),
+                    Style::default().fg(Color::Yellow),
+                ),
+            ]))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" タグ ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" タグ ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -7748,10 +9484,19 @@ fn render_side_by_side_diff(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🔀  Side-by-side Diff", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  🔀  Side-by-side Diff",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  │  [↑↓]スクロール  [Tab]フォーカス切替  [q]戻る"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Magenta)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta)),
+    );
     f.render_widget(header, chunks[0]);
 
     let panes = Layout::default()
@@ -7761,40 +9506,60 @@ fn render_side_by_side_diff(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Left side
     let left_lines: Vec<Line> = if app.diff_left.is_empty() {
-        vec![Line::from(Span::styled("  差分データがありません", Style::default().fg(Color::DarkGray)))]
+        vec![Line::from(Span::styled(
+            "  差分データがありません",
+            Style::default().fg(Color::DarkGray),
+        ))]
     } else {
-        app.diff_left.iter().map(|l| {
-            let color = if l.starts_with('+') {
-                Color::Green
-            } else if l.starts_with('-') {
-                Color::Red
-            } else {
-                Color::White
-            };
-            Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
-        }).collect()
+        app.diff_left
+            .iter()
+            .map(|l| {
+                let color = if l.starts_with('+') {
+                    Color::Green
+                } else if l.starts_with('-') {
+                    Color::Red
+                } else {
+                    Color::White
+                };
+                Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
+            })
+            .collect()
     };
-    let left_para = Paragraph::new(left_lines)
-        .block(Block::default().title(" Original ").borders(Borders::ALL).border_style(Style::default().fg(Color::Red)));
+    let left_para = Paragraph::new(left_lines).block(
+        Block::default()
+            .title(" Original ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red)),
+    );
     f.render_widget(left_para, panes[0]);
 
     // Right side
     let right_lines: Vec<Line> = if app.diff_right.is_empty() {
-        vec![Line::from(Span::styled("  差分データがありません", Style::default().fg(Color::DarkGray)))]
+        vec![Line::from(Span::styled(
+            "  差分データがありません",
+            Style::default().fg(Color::DarkGray),
+        ))]
     } else {
-        app.diff_right.iter().map(|l| {
-            let color = if l.starts_with('+') {
-                Color::Green
-            } else if l.starts_with('-') {
-                Color::Red
-            } else {
-                Color::White
-            };
-            Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
-        }).collect()
+        app.diff_right
+            .iter()
+            .map(|l| {
+                let color = if l.starts_with('+') {
+                    Color::Green
+                } else if l.starts_with('-') {
+                    Color::Red
+                } else {
+                    Color::White
+                };
+                Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
+            })
+            .collect()
     };
-    let right_para = Paragraph::new(right_lines)
-        .block(Block::default().title(" Modified ").borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    let right_para = Paragraph::new(right_lines).block(
+        Block::default()
+            .title(" Modified ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(right_para, panes[1]);
 }
 
@@ -7805,10 +9570,19 @@ fn render_file_tree_view(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🌳  File Tree", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  🌳  File Tree",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  │  [↑↓]選択  [Enter]展開/折畑  [q]戻る"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.file_tree.is_empty() {
@@ -7823,16 +9597,29 @@ fn render_file_tree_view(f: &mut Frame, app: &mut App, area: Rect) {
     let mut counter = 0usize;
     render_tree_nodes(&app.file_tree, &mut lines, &mut counter, app.tree_selected);
 
-    let tree_para = Paragraph::new(lines)
-        .block(Block::default().title(" ディレクトリ構造 ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let tree_para = Paragraph::new(lines).block(
+        Block::default()
+            .title(" ディレクトリ構造 ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(tree_para, chunks[1]);
 }
 
-fn render_tree_nodes(nodes: &[FileTreeNode], lines: &mut Vec<Line>, counter: &mut usize, selected: usize) {
+fn render_tree_nodes(
+    nodes: &[FileTreeNode],
+    lines: &mut Vec<Line>,
+    counter: &mut usize,
+    selected: usize,
+) {
     for node in nodes {
         let indent = "  ".repeat(node.depth);
         let icon = if node.is_dir {
-            if node.expanded { "📂" } else { "📁" }
+            if node.expanded {
+                "📂"
+            } else {
+                "📁"
+            }
         } else {
             "  "
         };
@@ -7842,7 +9629,13 @@ fn render_tree_nodes(nodes: &[FileTreeNode], lines: &mut Vec<Line>, counter: &mu
             Style::default().fg(Color::White)
         };
         lines.push(Line::from(Span::styled(
-            format!("{}{} {} {}", indent, icon, node.name, if node.is_dir { "/" } else { "" }),
+            format!(
+                "{}{} {} {}",
+                indent,
+                icon,
+                node.name,
+                if node.is_dir { "/" } else { "" }
+            ),
             style,
         )));
         *counter += 1;
@@ -7863,40 +9656,77 @@ fn render_rename_pattern(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  ✏️  Batch Rename Pattern", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  {} patterns  │  [a]追加  [↑↓]選択  [Tab]フィールド  [p]プレビュー  [q]戻る", app.rename_patterns.len())),
+        Span::styled(
+            "  ✏️  Batch Rename Pattern",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  {} patterns  │  [a]追加  [↑↓]選択  [Tab]フィールド  [p]プレビュー  [q]戻る",
+            app.rename_patterns.len()
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow)),
+    );
     f.render_widget(header, chunks[0]);
 
     // Pattern input area
     let current_pattern = if let Some(pat) = app.rename_patterns.get(app.rename_selected) {
-        format!("Pattern: {}  →  Replacement: {}  {}", pat.pattern, pat.replacement, if pat.use_regex { "[Regex]" } else { "[Glob]" })
+        format!(
+            "Pattern: {}  →  Replacement: {}  {}",
+            pat.pattern,
+            pat.replacement,
+            if pat.use_regex { "[Regex]" } else { "[Glob]" }
+        )
     } else {
         "パターンを選択してください".to_string()
     };
-    let input_style = if app.rename_field == 0 { Color::Cyan } else { Color::Yellow };
+    let input_style = if app.rename_field == 0 {
+        Color::Cyan
+    } else {
+        Color::Yellow
+    };
     let input_block = Paragraph::new(Line::from(Span::styled(
         format!("  {}", current_pattern),
         Style::default().fg(input_style),
     )))
-    .block(Block::default().title(" Pattern ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .title(" Pattern ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(input_block, chunks[1]);
 
     // Preview list
-    let preview_items: Vec<ListItem> = if let Some(pat) = app.rename_patterns.get(app.rename_selected) {
-        pat.preview.iter().map(|(old, new)| {
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
-                Span::styled("→ ", Style::default().fg(Color::DarkGray)),
-                Span::styled(format!("{}", new), Style::default().fg(Color::Green)),
-            ]))
-        }).collect()
-    } else {
-        vec![ListItem::new(Line::from(Span::styled("  プレビューなし", Style::default().fg(Color::DarkGray))))]
-    };
-    let preview_list = List::new(preview_items)
-        .block(Block::default().title(" プレビュー ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let preview_items: Vec<ListItem> =
+        if let Some(pat) = app.rename_patterns.get(app.rename_selected) {
+            pat.preview
+                .iter()
+                .map(|(old, new)| {
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
+                        Span::styled("→ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(format!("{}", new), Style::default().fg(Color::Green)),
+                    ]))
+                })
+                .collect()
+        } else {
+            vec![ListItem::new(Line::from(Span::styled(
+                "  プレビューなし",
+                Style::default().fg(Color::DarkGray),
+            )))]
+        };
+    let preview_list = List::new(preview_items).block(
+        Block::default()
+            .title(" プレビュー ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(preview_list, chunks[2]);
 }
 
@@ -7907,10 +9737,22 @@ fn render_timeline(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  ⏱️  Processing Timeline", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  {} events  │  [↑↓]スクロール  [q]戻る", app.timeline_entries.len())),
+        Span::styled(
+            "  ⏱️  Processing Timeline",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  {} events  │  [↑↓]スクロール  [q]戻る",
+            app.timeline_entries.len()
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.timeline_entries.is_empty() {
@@ -7921,48 +9763,69 @@ fn render_timeline(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app.timeline_entries.iter().map(|entry| {
-        let (icon, color) = match entry.event_type.as_str() {
-            "start" => ("▶", Color::Green),
-            "progress" => ("●", Color::Yellow),
-            "complete" => ("✔", Color::Cyan),
-            "error" => ("✖", Color::Red),
-            _ => ("•", Color::White),
-        };
-        let progress_bar = if entry.progress > 0.0 {
-            let filled = (entry.progress * 20.0) as usize;
-            let empty = 20 - filled;
-            format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
-        } else {
-            String::new()
-        };
-        ListItem::new(Line::from(vec![
-            Span::styled(format!("  {} ", icon), Style::default().fg(color)),
-            Span::styled(format!("[{}] ", entry.timestamp), Style::default().fg(Color::DarkGray)),
-            Span::raw(&entry.description),
-            Span::styled(format!(" {}", progress_bar), Style::default().fg(color)),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .timeline_entries
+        .iter()
+        .map(|entry| {
+            let (icon, color) = match entry.event_type.as_str() {
+                "start" => ("▶", Color::Green),
+                "progress" => ("●", Color::Yellow),
+                "complete" => ("✔", Color::Cyan),
+                "error" => ("✖", Color::Red),
+                _ => ("•", Color::White),
+            };
+            let progress_bar = if entry.progress > 0.0 {
+                let filled = (entry.progress * 20.0) as usize;
+                let empty = 20 - filled;
+                format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
+            } else {
+                String::new()
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("  {} ", icon), Style::default().fg(color)),
+                Span::styled(
+                    format!("[{}] ", entry.timestamp),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::raw(&entry.description),
+                Span::styled(format!(" {}", progress_bar), Style::default().fg(color)),
+            ]))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" タイムライン ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" タイムライン ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
 fn render_command_palette(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🎨  Command Palette", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  Query: {} │  {} results", app.palette_query, app.palette_results.len())),
+        Span::styled(
+            "  🎨  Command Palette",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  Query: {} │  {} results",
+            app.palette_query,
+            app.palette_results.len()
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Magenta)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Magenta)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.palette_results.is_empty() {
@@ -7973,17 +9836,26 @@ fn render_command_palette(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app.palette_results.iter().enumerate().map(|(i, (label, _))| {
-        let style = if i == app.palette_selected {
-            Style::default().fg(Color::Black).bg(Color::Magenta)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        ListItem::new(Line::from(Span::styled(format!("  {} ", label), style)))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .palette_results
+        .iter()
+        .enumerate()
+        .map(|(i, (label, _))| {
+            let style = if i == app.palette_selected {
+                Style::default().fg(Color::Black).bg(Color::Magenta)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            ListItem::new(Line::from(Span::styled(format!("  {} ", label), style)))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" コマンド ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" コマンド ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -7995,10 +9867,23 @@ fn render_notification_center(f: &mut Frame, app: &mut App, area: Rect) {
 
     let unread = app.notifications.iter().filter(|n| !n.read).count();
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  🔔  Notification Center", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::raw(format!("  │  {} notifications ({} unread)  │  [↑↓]選択  [r]既読  [q]戻る", app.notifications.len(), unread)),
+        Span::styled(
+            "  🔔  Notification Center",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(format!(
+            "  │  {} notifications ({} unread)  │  [↑↓]選択  [r]既読  [q]戻る",
+            app.notifications.len(),
+            unread
+        )),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow)),
+    );
     f.render_widget(header, chunks[0]);
 
     if app.notifications.is_empty() {
@@ -8009,29 +9894,43 @@ fn render_notification_center(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = app.notifications.iter().map(|notif| {
-        let (icon, color) = match notif.level.as_str() {
-            "info" => ("ℹ", Color::Cyan),
-            "warning" => ("⚠", Color::Yellow),
-            "error" => ("✖", Color::Red),
-            "success" => ("✔", Color::Green),
-            _ => ("•", Color::White),
-        };
-        let read_marker = if notif.read { "  " } else { "  " };
-        ListItem::new(Line::from(vec![
-            Span::raw(read_marker),
-            Span::styled(format!("{} ", icon), Style::default().fg(color)),
-            Span::styled(format!("[{}] ", notif.timestamp), Style::default().fg(Color::DarkGray)),
-            Span::styled(&notif.message, if notif.read {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default().fg(Color::White)
-            }),
-        ]))
-    }).collect();
+    let items: Vec<ListItem> = app
+        .notifications
+        .iter()
+        .map(|notif| {
+            let (icon, color) = match notif.level.as_str() {
+                "info" => ("ℹ", Color::Cyan),
+                "warning" => ("⚠", Color::Yellow),
+                "error" => ("✖", Color::Red),
+                "success" => ("✔", Color::Green),
+                _ => ("•", Color::White),
+            };
+            let read_marker = if notif.read { "  " } else { "  " };
+            ListItem::new(Line::from(vec![
+                Span::raw(read_marker),
+                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(
+                    format!("[{}] ", notif.timestamp),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    &notif.message,
+                    if notif.read {
+                        Style::default().fg(Color::DarkGray)
+                    } else {
+                        Style::default().fg(Color::White)
+                    },
+                ),
+            ]))
+        })
+        .collect();
 
-    let list = List::new(items)
-        .block(Block::default().title(" 通知 ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let list = List::new(items).block(
+        Block::default()
+            .title(" 通知 ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -8046,24 +9945,48 @@ fn render_export_report(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
-        Span::styled("  📊  Export Report", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "  📊  Export Report",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  │  [←→]フォーマット切替  [Enter]エクスポート  [q]戻る"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(header, chunks[0]);
 
     // Format selection
     let formats = ["HTML", "Markdown"];
-    let format_items: Vec<Line> = formats.iter().enumerate().map(|(i, fmt)| {
-        let style = if i == app.report_format {
-            Style::default().fg(Color::Black).bg(Color::Green)
-        } else {
-            Style::default().fg(Color::White)
-        };
-        Line::from(Span::styled(format!("  {} {}", if i == app.report_format { "▶" } else { " " }, fmt), style))
-    }).collect();
-    let format_block = Paragraph::new(format_items)
-        .block(Block::default().title(" フォーマット ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let format_items: Vec<Line> = formats
+        .iter()
+        .enumerate()
+        .map(|(i, fmt)| {
+            let style = if i == app.report_format {
+                Style::default().fg(Color::Black).bg(Color::Green)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            Line::from(Span::styled(
+                format!(
+                    "  {} {}",
+                    if i == app.report_format { "▶" } else { " " },
+                    fmt
+                ),
+                style,
+            ))
+        })
+        .collect();
+    let format_block = Paragraph::new(format_items).block(
+        Block::default()
+            .title(" フォーマット ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(format_block, chunks[1]);
 
     // Report preview
@@ -8071,19 +9994,23 @@ fn render_export_report(f: &mut Frame, app: &mut App, area: Rect) {
         "  Report Preview\n  \n  Format: {}\n  Path: {}\n  \n  処理統計、重複検出結果、圧縮効率などのレポートを生成します。",
         formats[app.report_format], app.report_path
     );
-    let report_lines: Vec<Line> = report_text.lines().map(|l| Line::from(Span::raw(l.to_string()))).collect();
-    let report_block = Paragraph::new(report_lines)
-        .block(Block::default().title(" プレビュー ").borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let report_lines: Vec<Line> = report_text
+        .lines()
+        .map(|l| Line::from(Span::raw(l.to_string())))
+        .collect();
+    let report_block = Paragraph::new(report_lines).block(
+        Block::default()
+            .title(" プレビュー ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(report_block, chunks[2]);
 }
 
 fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(area);
 
     let header = Paragraph::new(Line::from(vec![
@@ -8098,19 +10025,18 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(header, chunks[0]);
 
     if app.similar_groups.is_empty() {
-        let msg = Paragraph::new("  類似画像グループが見つかりません。メニューからスキャンを実行してください。")
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(ratatui::layout::Alignment::Center);
+        let msg = Paragraph::new(
+            "  類似画像グループが見つかりません。メニューからスキャンを実行してください。",
+        )
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(msg, chunks[1]);
         return;
     }
 
     let inner = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(35),
-            Constraint::Percentage(65),
-        ])
+        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
         .split(chunks[1]);
 
     // Group list (left pane)
@@ -8121,17 +10047,29 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
         } else {
             Style::default().fg(Color::White)
         };
-        let icon = if group.hash_type == "aHash" { "🎨" } else { "📐" };
+        let icon = if group.hash_type == "aHash" {
+            "🎨"
+        } else {
+            "📐"
+        };
         group_items.push(ListItem::new(Line::from(Span::styled(
-            format!("{} Group {:02} ({} files, hash: {:016x})", icon, i + 1, group.files.len(), group.hash),
+            format!(
+                "{} Group {:02} ({} files, hash: {:016x})",
+                icon,
+                i + 1,
+                group.files.len(),
+                group.hash
+            ),
             style,
         ))));
     }
     let group_list = List::new(group_items)
-        .block(Block::default()
-            .title(" 類似グループ ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray)))
+        .block(
+            Block::default()
+                .title(" 類似グループ ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan));
     f.render_widget(group_list, inner[0]);
 
@@ -8139,7 +10077,8 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
     if let Some(group) = app.similar_groups.get(app.similar_selected) {
         let mut file_items: Vec<ListItem> = Vec::new();
         for (i, (path, size)) in group.files.iter().enumerate() {
-            let fname = std::path::Path::new(path).file_name()
+            let fname = std::path::Path::new(path)
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.clone());
             let size_str = if *size > 1_000_000 {
@@ -8160,22 +10099,29 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
             };
             file_items.push(ListItem::new(Line::from(vec![
                 Span::styled(format!("  {:2}. {} ", i + 1, fname), style),
-                Span::styled(format!("[{}]", size_str), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("[{}]", size_str),
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(dist_info, Style::default().fg(Color::Cyan)),
             ])));
         }
-        let file_list = List::new(file_items)
-            .block(Block::default()
-                .title(format!(" Group {} ファイル ({}) ", app.similar_selected + 1, group.hash_type))
+        let file_list = List::new(file_items).block(
+            Block::default()
+                .title(format!(
+                    " Group {} ファイル ({}) ",
+                    app.similar_selected + 1,
+                    group.hash_type
+                ))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)));
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
         f.render_widget(file_list, inner[1]);
     }
 }
 
 fn hash_cache_db() {
-    let status = Command::new(r"Z:\Closet\Remove-Duplicates\hash_cache_db.exe")
-        .status();
+    let status = Command::new(r"Z:\Closet\Remove-Duplicates\hash_cache_db.exe").status();
 
     match status {
         Ok(_) => {}
@@ -8197,15 +10143,28 @@ fn render_rename_preview(f: &mut Frame, app: &mut App, area: Rect) {
 
     let count = app.rename_preview_items.len();
     let header = Paragraph::new(format!("  {} files will be renamed", count))
-        .style(Style::default().fg(theme.warning).add_modifier(Modifier::BOLD))
-        .block(Block::default().borders(Borders::ALL).title("Rename Preview"));
+        .style(
+            Style::default()
+                .fg(theme.warning)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Rename Preview"),
+        );
     f.render_widget(header, chunks[0]);
 
     let visible_height = chunks[1].height.saturating_sub(2) as usize;
-    let start = if app.rename_preview_scroll >= visible_height { app.rename_preview_scroll - visible_height + 1 } else { 0 };
+    let start = if app.rename_preview_scroll >= visible_height {
+        app.rename_preview_scroll - visible_height + 1
+    } else {
+        0
+    };
     let end = (start + visible_height).min(count);
 
-    let items: Vec<ListItem> = app.rename_preview_items[start..end].iter()
+    let items: Vec<ListItem> = app.rename_preview_items[start..end]
+        .iter()
         .map(|(old, new)| {
             ListItem::new(Line::from(vec![
                 Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
@@ -8215,8 +10174,11 @@ fn render_rename_preview(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Before → After"));
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Before → After"),
+    );
     f.render_widget(list, chunks[1]);
 }
 
@@ -8234,32 +10196,60 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Source
-    let src = if app.folder_sync_source.is_empty() { "(not set - press 's')".to_string() } else { app.folder_sync_source.clone() };
+    let src = if app.folder_sync_source.is_empty() {
+        "(not set - press 's')".to_string()
+    } else {
+        app.folder_sync_source.clone()
+    };
     let src_block = Paragraph::new(format!("  📁 {}", src))
         .style(Style::default().fg(theme.fg))
         .block(Block::default().borders(Borders::ALL).title("Source (s)"));
     f.render_widget(src_block, chunks[0]);
 
     // Dest
-    let dst = if app.folder_sync_dest.is_empty() { "(not set - press 'd')".to_string() } else { app.folder_sync_dest.clone() };
+    let dst = if app.folder_sync_dest.is_empty() {
+        "(not set - press 'd')".to_string()
+    } else {
+        app.folder_sync_dest.clone()
+    };
     let dst_block = Paragraph::new(format!("  📁 {}", dst))
         .style(Style::default().fg(theme.fg))
-        .block(Block::default().borders(Borders::ALL).title("Destination (d)"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Destination (d)"),
+        );
     f.render_widget(dst_block, chunks[1]);
 
     // Status
-    let watch_status = if app.folder_sync_watching { "🟢 Watching" } else { "⚪ Stopped" };
-    let status_block = Paragraph::new(format!("  {} │ r: Sync now │ w: Toggle watch", watch_status))
-        .style(Style::default().fg(theme.accent))
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+    let watch_status = if app.folder_sync_watching {
+        "🟢 Watching"
+    } else {
+        "⚪ Stopped"
+    };
+    let status_block = Paragraph::new(format!(
+        "  {} │ r: Sync now │ w: Toggle watch",
+        watch_status
+    ))
+    .style(Style::default().fg(theme.accent))
+    .block(Block::default().borders(Borders::ALL).title("Status"));
     f.render_widget(status_block, chunks[2]);
 
     // Log
-    let log_items: Vec<ListItem> = app.folder_sync_log.iter().rev().take(50)
-        .map(|line| ListItem::new(Line::from(Span::styled(format!("  {}", line), Style::default().fg(theme.muted)))))
+    let log_items: Vec<ListItem> = app
+        .folder_sync_log
+        .iter()
+        .rev()
+        .take(50)
+        .map(|line| {
+            ListItem::new(Line::from(Span::styled(
+                format!("  {}", line),
+                Style::default().fg(theme.muted),
+            )))
+        })
         .collect();
-    let log_block = List::new(log_items)
-        .block(Block::default().borders(Borders::ALL).title("Sync Log"));
+    let log_block =
+        List::new(log_items).block(Block::default().borders(Borders::ALL).title("Sync Log"));
     f.render_widget(log_block, chunks[3]);
 }
 
@@ -8283,7 +10273,9 @@ fn render_keybind_custom(f: &mut Frame, app: &mut App, area: Rect) {
         ("Watch", &app.config.keybindings.watch),
     ];
 
-    let items: Vec<ListItem> = bindings.iter().enumerate()
+    let items: Vec<ListItem> = bindings
+        .iter()
+        .enumerate()
         .map(|(i, (name, key))| {
             let style = if i == app.keybind_selected {
                 Style::default().fg(theme.bg).bg(theme.primary)
@@ -8299,8 +10291,11 @@ fn render_keybind_custom(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let block = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Keybindings (Enter to edit, Esc to cancel)"));
+    let block = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Keybindings (Enter to edit, Esc to cancel)"),
+    );
     f.render_widget(block, area);
 }
 
@@ -8319,19 +10314,22 @@ struct GitHubRelease {
 }
 
 fn check_for_updates() -> Option<String> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", GITHUB_REPO);
-    
+    let url = format!(
+        "https://api.github.com/repos/{}/releases/latest",
+        GITHUB_REPO
+    );
+
     let client = reqwest::blocking::Client::builder()
         .user_agent("pixpipe")
         .build()
         .ok()?;
-    
+
     let resp = client.get(&url).send().ok()?;
     let release: GitHubRelease = resp.json().ok()?;
-    
+
     let latest = release.tag_name.trim_start_matches('v');
     let current = CURRENT_VERSION;
-    
+
     if latest != current {
         Some(format!(
             "New version available: v{} (current: v{})\nDownload: {}",
@@ -8500,6 +10498,8 @@ mod tests {
     fn test_full_step_labels() {
         assert_eq!(FULL_STEP_LABELS.len(), 5);
         assert!(FULL_STEP_LABELS[0].contains("Move"));
-        assert!(FULL_STEP_LABELS[1].contains("duplicates") || FULL_STEP_LABELS[1].contains("Duplicate"));
+        assert!(
+            FULL_STEP_LABELS[1].contains("duplicates") || FULL_STEP_LABELS[1].contains("Duplicate")
+        );
     }
 }

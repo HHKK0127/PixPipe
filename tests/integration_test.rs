@@ -34,7 +34,7 @@ fn test_hamming_distance() {
     fn hamming_distance(a: u64, b: u64) -> u32 {
         (a ^ b).count_ones()
     }
-    
+
     assert_eq!(hamming_distance(0, 0), 0);
     assert_eq!(hamming_distance(0, 1), 1);
     assert_eq!(hamming_distance(0xFF, 0x00), 8);
@@ -48,7 +48,7 @@ fn test_duplicate_group_structure() {
         hash: String,
         files: Vec<String>,
     }
-    
+
     let group = DuplicateGroup {
         hash: "abc123".to_string(),
         files: vec![
@@ -57,7 +57,7 @@ fn test_duplicate_group_structure() {
             "file3.jpg".to_string(),
         ],
     };
-    
+
     assert_eq!(group.files.len(), 3);
     assert!(!group.hash.is_empty());
 }
@@ -72,7 +72,7 @@ fn test_history_entry_format() {
         files_processed: usize,
         duplicates_found: usize,
     }
-    
+
     let entry = HistoryEntry {
         timestamp: "2024-01-15 10:30:00".to_string(),
         source: "/input".to_string(),
@@ -80,7 +80,7 @@ fn test_history_entry_format() {
         files_processed: 100,
         duplicates_found: 5,
     };
-    
+
     assert!(entry.files_processed > 0);
     assert!(entry.duplicates_found <= entry.files_processed);
 }
@@ -92,7 +92,7 @@ fn test_progress_gauge() {
     let current = 50usize;
     let ratio = current as f64 / total as f64;
     assert!((ratio - 0.5).abs() < f64::EPSILON);
-    
+
     let bar_width = 20usize;
     let filled = (ratio * bar_width as f64) as usize;
     assert_eq!(filled, 10);
@@ -102,19 +102,19 @@ fn test_progress_gauge() {
 fn test_file_extension_filtering() {
     // Test image extension filtering
     let extensions = vec!["jpg", "jpeg", "png", "gif", "webp"];
-    
+
     let test_files = vec![
         ("photo.jpg", true),
-        ("image.PNG", true),  // Case insensitive
+        ("image.PNG", true), // Case insensitive
         ("doc.pdf", false),
         ("pic.jpeg", true),
         ("noext", false),
     ];
-    
+
     for (file, expected) in test_files {
-        let has_ext = extensions.iter().any(|ext| {
-            file.to_lowercase().ends_with(&format!(".{}", ext))
-        });
+        let has_ext = extensions
+            .iter()
+            .any(|ext| file.to_lowercase().ends_with(&format!(".{}", ext)));
         assert_eq!(has_ext, expected, "Failed for file: {}", file);
     }
 }
@@ -125,32 +125,34 @@ fn test_undo_log_operations() {
     struct UndoLog {
         entries: Vec<(String, String)>,
     }
-    
+
     impl UndoLog {
         fn new() -> Self {
-            Self { entries: Vec::new() }
+            Self {
+                entries: Vec::new(),
+            }
         }
-        
+
         fn add(&mut self, from: String, to: String) {
             self.entries.push((from, to));
         }
-        
+
         fn undo_last(&mut self) -> Option<(String, String)> {
             self.entries.pop()
         }
-        
+
         fn len(&self) -> usize {
             self.entries.len()
         }
     }
-    
+
     let mut log = UndoLog::new();
     assert_eq!(log.len(), 0);
-    
+
     log.add("a.jpg".to_string(), "b.jpg".to_string());
     log.add("c.jpg".to_string(), "d.jpg".to_string());
     assert_eq!(log.len(), 2);
-    
+
     let last = log.undo_last().unwrap();
     assert_eq!(last.0, "c.jpg");
     assert_eq!(last.1, "d.jpg");
@@ -166,7 +168,7 @@ fn test_notification_levels() {
         Error,
         Success,
     }
-    
+
     let levels = vec![Level::Info, Level::Warning, Level::Error, Level::Success];
     assert_eq!(levels.len(), 4);
 }
@@ -178,7 +180,7 @@ fn test_batch_queue_ordering() {
     queue.push("folder1");
     queue.push("folder2");
     queue.push("folder3");
-    
+
     assert_eq!(queue.len(), 3);
     assert_eq!(queue.remove(0), "folder1");
     assert_eq!(queue.remove(0), "folder2");
@@ -194,12 +196,20 @@ fn test_profile_switching() {
         source: String,
         dest: String,
     }
-    
+
     let profiles = vec![
-        Profile { name: "Twitter".to_string(), source: "/twitter".to_string(), dest: "/output".to_string() },
-        Profile { name: "Downloads".to_string(), source: "/downloads".to_string(), dest: "/archive".to_string() },
+        Profile {
+            name: "Twitter".to_string(),
+            source: "/twitter".to_string(),
+            dest: "/output".to_string(),
+        },
+        Profile {
+            name: "Downloads".to_string(),
+            source: "/downloads".to_string(),
+            dest: "/archive".to_string(),
+        },
     ];
-    
+
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].name, "Twitter");
     assert_eq!(profiles[1].name, "Downloads");
