@@ -66,6 +66,38 @@ const THEME_NAMES: &[&str] = &[
 ];
 
 // ============================================================
+// Safe Helper Functions
+// ============================================================
+
+fn safe_file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn safe_file_stem(path: &Path) -> String {
+    path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn safe_extension(path: &Path) -> String {
+    path.extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+fn safe_parent(path: &Path) -> PathBuf {
+    path.parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn safe_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+// ============================================================
 // Config
 // ============================================================
 
@@ -376,7 +408,7 @@ impl FileFilter {
         }
         // Name pattern filter
         if !self.name_pattern.is_empty() {
-            let name = path.file_name().unwrap().to_string_lossy().to_lowercase();
+            let name = safe_file_name(path).to_lowercase();
             if !name.contains(&self.name_pattern.to_lowercase()) {
                 return false;
             }
@@ -2066,8 +2098,8 @@ impl App {
                     self.preview_file_count += 1;
                 }
 
-                let file_stem = path.file_stem().unwrap().to_string_lossy();
-                let ext = path.extension().unwrap().to_string_lossy().to_string();
+                let file_stem = safe_file_stem(&path);
+                let ext = safe_extension(&path);
 
                 let new_name = if is_digit_underscore_digit(&file_stem) {
                     Some(format!("{}.{}", file_stem.replace("_", ""), ext))
@@ -2077,7 +2109,7 @@ impl App {
                 };
 
                 if let Some(new) = new_name {
-                    let old = path.file_name().unwrap().to_string_lossy().to_string();
+                    let old = safe_file_name(&path);
                     self.preview_items.push((old, new));
                 }
             }
@@ -2090,7 +2122,7 @@ impl App {
                 if !path.is_file() || !self.is_image_file(&path) {
                     continue;
                 }
-                let file_name = path.file_name().unwrap().to_string_lossy();
+                let file_name = safe_file_name(&path);
                 if file_name.starts_with(|c: char| c.is_numeric()) && file_name.len() > 14 {
                     continue;
                 }
@@ -2101,9 +2133,9 @@ impl App {
                     if let Ok(modified) = meta.modified() {
                         let datetime: chrono::DateTime<chrono::Local> = modified.into();
                         let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
-                        let ext = path.extension().unwrap().to_string_lossy().to_string();
+                        let ext = safe_extension(&path);
                         let new_name = format!("{}.{}", timestamp, ext);
-                        if new_name != file_name.as_ref() {
+                        if new_name != file_name {
                             self.preview_items.push((file_name.to_string(), new_name));
                         }
                     }
@@ -2137,11 +2169,11 @@ impl App {
                 *v = 0.0;
             }
         }
-        *self.progress.lock().unwrap() = 0.0;
-        *self.progress_detail.lock().unwrap() = String::new();
-        *self.is_processing.lock().unwrap() = true;
-        *self.start_time.lock().unwrap() = Some(Instant::now());
-        *self.files_processed.lock().unwrap() = 0;
+        *safe_lock(&self.progress) = 0.0;
+        *safe_lock(&self.progress_detail) = String::new();
+        *safe_lock(&self.is_processing) = true;
+        *safe_lock(&self.start_time) = Some(Instant::now());
+        *safe_lock(&self.files_processed) = 0;
 
         let logs = self.logs.clone();
         let progress = self.progress.clone();
@@ -2159,7 +2191,7 @@ impl App {
         let dry_run = self.dry_run;
 
         // Reset interrupt flag
-        *self.is_interrupted.lock().unwrap() = false;
+        *safe_lock(&self.is_interrupted) = false;
 
         thread::spawn(move || {
             let log = |msg: String| {
@@ -2222,7 +2254,7 @@ impl App {
                 &add_undo,
             );
 
-            *is_processing.lock().unwrap() = false;
+            *safe_lock(&is_processing) = false;
         });
     }
 
@@ -2234,11 +2266,11 @@ impl App {
         if let Ok(mut errs) = self.errors.lock() {
             errs.clear();
         }
-        *self.progress.lock().unwrap() = 0.0;
-        *self.progress_detail.lock().unwrap() = String::new();
-        *self.is_processing.lock().unwrap() = true;
-        *self.start_time.lock().unwrap() = Some(Instant::now());
-        *self.files_processed.lock().unwrap() = 0;
+        *safe_lock(&self.progress) = 0.0;
+        *safe_lock(&self.progress_detail) = String::new();
+        *safe_lock(&self.is_processing) = true;
+        *safe_lock(&self.start_time) = Some(Instant::now());
+        *safe_lock(&self.files_processed) = 0;
 
         let logs = self.logs.clone();
         let progress = self.progress.clone();
@@ -2370,7 +2402,7 @@ impl App {
                 MenuItem::FolderSync => {}
                 MenuItem::KeybindCustom => {}
             }
-            *is_processing.lock().unwrap() = false;
+            *safe_lock(&is_processing) = false;
         });
     }
 
@@ -2399,7 +2431,7 @@ impl App {
         if self.search_query.is_empty() {
             self.filtered_log_indices.clear();
         } else {
-            let logs = self.logs.lock().unwrap();
+            let logs = safe_lock(&self.logs);
             let query = self.search_query.to_lowercase();
             self.filtered_log_indices = logs
                 .iter()
@@ -2544,7 +2576,7 @@ impl App {
                 for entry in entries.flatten() {
                     let p = entry.path();
                     if p.is_file() && self.is_image_file(&p) {
-                        let dest = PathBuf::from(&self.config.dest).join(p.file_name().unwrap());
+                        let dest = PathBuf::from(&self.config.dest).join(safe_file_name(&p));
                         if !dest.exists() && fs::rename(&p, &dest).is_ok() {
                             self.watch_processed += 1;
                             if let Ok(mut logs) = self.logs.lock() {
@@ -2595,7 +2627,7 @@ impl App {
 
     // Feature #12: Export log
     fn export_log(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let logs = self.logs.lock().unwrap();
+        let logs = safe_lock(&self.logs);
         let path = format!(
             "io_tool_log_{}.txt",
             chrono::Local::now().format("%Y%m%d_%H%M%S")
@@ -2618,11 +2650,11 @@ impl App {
                 if !path.is_file() {
                     continue;
                 }
-                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                let name = safe_file_name(&path);
                 if let Ok(meta) = fs::metadata(&path) {
                     let size = meta.len();
                     // Simulate conversion ratio based on extension
-                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let ext = safe_extension(&path);
                     let ratio = match ext.to_lowercase().as_str() {
                         "jpg" | "jpeg" => 0.65,
                         "png" => 0.55,
@@ -2712,10 +2744,10 @@ impl App {
                 if !path.is_file() {
                     continue;
                 }
-                let name = path.file_name().unwrap().to_string_lossy().to_lowercase();
+                let name = safe_file_name(&path).to_lowercase();
                 for rule in &self.classify_rules {
                     if name.contains(&rule.0.to_lowercase()) {
-                        let target = dest.join(&rule.1).join(path.file_name().unwrap());
+                        let target = dest.join(&rule.1).join(safe_file_name(&path));
                         let _ = fs::rename(&path, &target);
                         break;
                     }
@@ -2735,7 +2767,7 @@ impl App {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_file() && self.is_image_file(&path) {
-                    let name = path.file_name().unwrap().to_string_lossy().to_string();
+                    let name = safe_file_name(&path);
                     self.meta_files.push((name, false));
                 }
             }
@@ -3751,19 +3783,19 @@ fn run_full_process(
             set_detail(format!("{}/{} files", i + 1, total));
             set_step_prog(3, (i + 1) as f64 / total as f64 * 0.7);
 
-            let file_name = path.file_name().unwrap().to_string_lossy();
+            let file_name = safe_file_name(&path);
             if file_name.starts_with(|c: char| c.is_numeric()) && file_name.len() > 14 {
                 continue;
             }
 
-            let ext = path.extension().unwrap().to_string_lossy().to_string();
+            let ext = safe_extension(&path);
             if let Ok(meta) = fs::metadata(&path) {
                 if let Ok(modified) = meta.modified() {
                     let datetime: chrono::DateTime<chrono::Local> = modified.into();
                     let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
                     let new_name = format!("{}.{}", timestamp, ext);
                     if let Ok(final_name) = get_unique_filename(&path, &new_name) {
-                        let new_path = path.parent().unwrap().join(&final_name);
+                        let new_path = safe_parent(&path).join(&final_name);
                         if !dry_run {
                             if fs::rename(&path, &new_path).is_ok() {
                                 add_undo(
@@ -3885,8 +3917,8 @@ fn clean_filenames(dest: &str, dry_run: bool, add_error: &dyn Fn(String)) -> usi
 
     for entry in entries {
         let path = entry.path();
-        let file_stem = path.file_stem().unwrap().to_string_lossy();
-        let ext = path.extension().unwrap().to_string_lossy().to_string();
+        let file_stem = safe_file_stem(&path);
+        let ext = safe_extension(&path);
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
             format!("{}.{}", file_stem.replace("_", ""), ext)
@@ -3897,7 +3929,7 @@ fn clean_filenames(dest: &str, dry_run: bool, add_error: &dyn Fn(String)) -> usi
         };
 
         if let Ok(final_name) = get_unique_filename(&path, &new_name) {
-            let new_path = path.parent().unwrap().join(&final_name);
+            let new_path = safe_parent(&path).join(&final_name);
             if !dry_run {
                 match fs::rename(&path, &new_path) {
                     Ok(()) => count += 1,
@@ -3932,8 +3964,8 @@ fn run_with_progress(
         set_prog((i + 1) as f64 / total as f64);
         set_detail(format!("{}/{} files", i + 1, total));
 
-        let file_stem = path.file_stem().unwrap().to_string_lossy();
-        let ext = path.extension().unwrap().to_string_lossy().to_string();
+        let file_stem = safe_file_stem(&path);
+        let ext = safe_extension(&path);
 
         let new_name = match mode {
             "rename" => {
@@ -3945,7 +3977,7 @@ fn run_with_progress(
                 }
             }
             "timestamp" => {
-                let file_name = path.file_name().unwrap().to_string_lossy();
+                let file_name = safe_file_name(&path);
                 if file_name.starts_with(|c: char| c.is_numeric()) && file_name.len() > 14 {
                     None
                 } else {
@@ -3967,7 +3999,7 @@ fn run_with_progress(
 
         if let Some(new) = new_name {
             if let Ok(final_name) = get_unique_filename(&path, &new) {
-                let new_path = path.parent().unwrap().join(&final_name);
+                let new_path = safe_parent(&path).join(&final_name);
                 if !dry_run {
                     match fs::rename(&path, &new_path) {
                         Ok(()) => {
@@ -4003,10 +4035,10 @@ fn show_cli_menu() {
     println!();
 
     print!("Select an option (1-5): ");
-    io::stdout().flush().unwrap();
+    let _ = io::stdout().flush();
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
+    let _ = io::stdin().read_line(&mut input);
     let choice: u32 = input.trim().parse().unwrap_or(0);
 
     let log = |msg: String| println!("{}", msg);
@@ -4290,7 +4322,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 continue;
                             }
                             KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                let mut paused = app.is_paused.lock().unwrap();
+                                let mut paused = safe_lock(&app.is_paused);
                                 *paused = !*paused;
                                 continue;
                             }
@@ -4465,7 +4497,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 }
                             }
                             KeyCode::Char(c) if c.is_ascii_digit() => {
-                                let idx = c.to_digit(10).unwrap() as usize;
+                                let idx = c.to_digit(10).unwrap_or(0) as usize;
                                 if idx >= 1 && idx <= app.menu_items.len() {
                                     let item = app.menu_items[idx - 1];
                                     match item {
@@ -4662,22 +4694,19 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                         AppState::Processing => {
                             if key.code == KeyCode::Esc {
                                 // Interrupt processing
-                                *app.is_interrupted.lock().unwrap() = true;
-                                *app.is_processing.lock().unwrap() = false;
+                                *safe_lock(&app.is_interrupted) = true;
+                                *safe_lock(&app.is_processing) = false;
                                 app.state = AppState::Done;
                             }
                             if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
                                 // Allow viewing log during processing
                             }
-                            if !*app.is_processing.lock().unwrap() {
-                                let elapsed = app
-                                    .start_time
-                                    .lock()
-                                    .unwrap()
+                            if !*safe_lock(&app.is_processing) {
+                                let elapsed = safe_lock(&app.start_time)
                                     .map(|t| t.elapsed().as_secs_f64())
                                     .unwrap_or(0.0);
-                                let errs = app.errors.lock().unwrap().len();
-                                let processed = *app.files_processed.lock().unwrap();
+                                let errs = safe_lock(&app.errors).len();
+                                let processed = *safe_lock(&app.files_processed);
                                 let entry = HistoryEntry {
                                     timestamp: chrono::Local::now()
                                         .format("%Y-%m-%d %H:%M:%S")
@@ -6111,15 +6140,12 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
             }
         }
 
-        if app.state == AppState::Processing && !*app.is_processing.lock().unwrap() {
-            let elapsed = app
-                .start_time
-                .lock()
-                .unwrap()
+        if app.state == AppState::Processing && !*safe_lock(&app.is_processing) {
+            let elapsed = safe_lock(&app.start_time)
                 .map(|t| t.elapsed().as_secs_f64())
                 .unwrap_or(0.0);
-            let errs = app.errors.lock().unwrap().len();
-            let processed = *app.files_processed.lock().unwrap();
+            let errs = safe_lock(&app.errors).len();
+            let processed = *safe_lock(&app.files_processed);
             let entry = HistoryEntry {
                 timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                 action: "Full Process".into(),
@@ -6175,7 +6201,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::Splash => "  pixpipe".to_string(),
         AppState::Menu => {
             let dry = if app.dry_run { " [DRY RUN]" } else { "" };
-            let pause = if *app.is_paused.lock().unwrap() {
+            let pause = if *safe_lock(&app.is_paused) {
                 " [PAUSED]"
             } else {
                 ""
@@ -6190,7 +6216,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         AppState::Preview => "  Preview — Rename Changes".to_string(),
         AppState::Processing => {
             let sp = SPINNER_CHARS[app.spinner_idx];
-            let pause = if *app.is_paused.lock().unwrap() {
+            let pause = if *safe_lock(&app.is_paused) {
                 " [PAUSED]"
             } else {
                 ""
@@ -6772,7 +6798,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Current step with spinner and status badge
-    let step_text = app.current_step.lock().unwrap().clone();
+    let step_text = safe_lock(&app.current_step).clone();
     let sp = SPINNER_CHARS[app.spinner_idx];
     let step = Paragraph::new(vec![
         Line::from(vec![
@@ -6794,7 +6820,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(step, chunks[0]);
 
     // Main progress bar with visual gauge
-    let progress_val = *app.progress.lock().unwrap();
+    let progress_val = *safe_lock(&app.progress);
     let gauge_width = (chunks[1].width.saturating_sub(20)) as usize;
     let bar = make_gauge_bar(progress_val, gauge_width);
     let gauge = Gauge::default()
@@ -6809,7 +6835,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(gauge, chunks[1]);
 
     // Sub-progress (per-step visual bars)
-    let sp = app.step_progress.lock().unwrap().clone();
+    let sp = safe_lock(&app.step_progress).clone();
     let sub_bars: Vec<Span> = sp
         .iter()
         .enumerate()
@@ -6841,13 +6867,10 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(sub_progress, chunks[2]);
 
     // Enhanced stats display (ferrocopy-inspired)
-    let elapsed = app
-        .start_time
-        .lock()
-        .unwrap()
+    let elapsed = safe_lock(&app.start_time)
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
-    let processed = *app.files_processed.lock().unwrap();
+    let processed = *safe_lock(&app.files_processed);
     let speed = if elapsed > 0.0 {
         processed as f64 / elapsed
     } else {
@@ -6859,7 +6882,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
         0.0
     };
 
-    let detail_text = app.progress_detail.lock().unwrap().clone();
+    let detail_text = safe_lock(&app.progress_detail).clone();
     let speed_str = format!("{:.1} files/s", speed);
     let eta_str = format_duration(remaining);
     let elapsed_str = format_duration(elapsed);
@@ -6889,7 +6912,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(7), // Status + stats with enhanced display
-            Constraint::Length(if app.errors.lock().unwrap().is_empty() {
+            Constraint::Length(if safe_lock(&app.errors).is_empty() {
                 0
             } else {
                 8
@@ -6899,14 +6922,11 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Completion message with stats and status badge
-    let has_errors = !app.errors.lock().unwrap().is_empty();
-    let elapsed = app
-        .start_time
-        .lock()
-        .unwrap()
+    let has_errors = !safe_lock(&app.errors).is_empty();
+    let elapsed = safe_lock(&app.start_time)
         .map(|t| t.elapsed().as_secs_f64())
         .unwrap_or(0.0);
-    let processed = *app.files_processed.lock().unwrap();
+    let processed = *safe_lock(&app.files_processed);
 
     let status_badge = if has_errors {
         render_status_badge("error", &theme)
@@ -6918,7 +6938,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         "Files: {} │ Duration: {} │ Errors: {} │ Theme: {}",
         processed,
         format_duration(elapsed),
-        app.errors.lock().unwrap().len(),
+        safe_lock(&app.errors).len(),
         THEME_NAMES[app.theme_idx]
     );
 
@@ -6953,7 +6973,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Error list with alert styling
     if has_errors {
-        let errors = app.errors.lock().unwrap();
+        let errors = safe_lock(&app.errors);
         let err_items: Vec<ListItem> = errors
             .iter()
             .map(|e| {
@@ -7028,7 +7048,7 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_log(f: &mut Frame, app: &mut App, area: Rect, theme: &Theme) {
-    let logs = app.logs.lock().unwrap();
+    let logs = safe_lock(&app.logs);
 
     let title = if app.search_mode {
         format!("Log — Search: {}_", app.search_query)
@@ -8933,13 +8953,13 @@ fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     for entry in entries {
         let path = entry.path();
-        let file_name = path.file_name().unwrap().to_string_lossy();
+        let file_name = safe_file_name(&path);
 
         if file_name.starts_with(|c: char| c.is_numeric()) && file_name.len() > 14 {
             continue;
         }
 
-        let ext = path.extension().unwrap().to_string_lossy().to_string();
+        let ext = safe_extension(&path);
         let metadata = fs::metadata(&path)?;
         let modified = metadata.modified()?;
         let datetime: chrono::DateTime<chrono::Local> = modified.into();
@@ -8948,14 +8968,14 @@ fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
         let new_name = format!("{}.{}", timestamp, ext);
         let final_name = get_unique_filename(&path, &new_name)?;
 
-        let new_path = path.parent().unwrap().join(&final_name);
+        let new_path = safe_parent(&path).join(&final_name);
         fs::rename(&path, &new_path)?;
     }
     Ok(())
 }
 
 fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let mut new_path = path.parent().unwrap().to_path_buf();
+    let mut new_path = safe_parent(path);
     new_path.push(name);
 
     if !new_path.exists() {
@@ -8964,12 +8984,8 @@ fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::e
 
     // Separate stem and extension from the name
     let name_path = PathBuf::from(name);
-    let stem = name_path.file_stem().unwrap().to_string_lossy().to_string();
-    let ext = name_path
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let stem = safe_file_stem(&name_path);
+    let ext = safe_extension(&name_path);
 
     for i in 0..10 {
         let candidate = if ext.is_empty() {
@@ -8977,7 +8993,7 @@ fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::e
         } else {
             format!("{}.{}{}", stem, i, ext)
         };
-        let candidate_path = path.parent().unwrap().join(&candidate);
+        let candidate_path = safe_parent(path).join(&candidate);
         if !candidate_path.exists() {
             return Ok(candidate);
         }
@@ -8994,8 +9010,8 @@ fn rename_remove_underscore_parens(dest: &str) -> Result<(), Box<dyn std::error:
 
     for entry in entries {
         let path = entry.path();
-        let file_stem = path.file_stem().unwrap().to_string_lossy();
-        let ext = path.extension().unwrap().to_string_lossy().to_string();
+        let file_stem = safe_file_stem(&path);
+        let ext = safe_extension(&path);
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
             format!("{}.{}", file_stem.replace("_", ""), ext)
@@ -9006,7 +9022,7 @@ fn rename_remove_underscore_parens(dest: &str) -> Result<(), Box<dyn std::error:
         };
 
         let final_name = get_unique_filename(&path, &new_name)?;
-        let new_path = path.parent().unwrap().join(&final_name);
+        let new_path = safe_parent(&path).join(&final_name);
         fs::rename(&path, &new_path)?;
     }
     Ok(())
