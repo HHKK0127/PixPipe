@@ -1222,6 +1222,12 @@ fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme) {
     }
 }
 
+// ============================================================
+// HELPER FUNCTIONS - Utilities and Formatters
+// ============================================================
+// These are utility functions used by render functions and other parts of the code.
+// TODO: Extract to src/utils.rs for better organization
+
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
@@ -6276,6 +6282,16 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Bottom info bar (clock + stats + memory)
     render_info_bar(f, app, chunks[3]);
 }
+
+// ============================================================
+// RENDER FUNCTIONS - Screen Rendering
+// ============================================================
+// These functions render individual screens and UI components.
+// They are organized by screen type for easier navigation.
+//
+// TODO: Future refactoring - move to ui/render.rs when dependencies are resolved
+// Current blocker: render functions call internal functions (safe_lock, format_size, etc.)
+// that are defined in main.rs. Need to extract those to utils module first.
 
 fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
