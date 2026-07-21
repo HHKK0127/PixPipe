@@ -328,6 +328,54 @@ Toggle memory-mapped file I/O for improved performance on large files.
 - Enhanced duplicate group navigation
 - Real-time memory monitoring with sysinfo
 
+## Ferrocopy-Inspired UI Components
+
+New UI components inspired by ferrocopy's rendering engine:
+
+| Component | Description | Usage |
+|-----------|-------------|-------|
+| `Toast` | Auto-dismiss notifications with type variants | `render_toasts()` |
+| `StatusBadge` | Processing/Success/Failed/Warning status indicators | `render_status_badge()` |
+| `ButtonVariant` | Primary/Secondary/Danger/Success/Ghost buttons | `render_button_variant()` |
+| `BadgeVariant` | Info/Success/Warning/Error/Draft badges | `render_badge()` |
+| `AlertVariant` | Info/Success/Warning/Error alerts with messages | `render_alert()` |
+| `SectionHeading` | Themed section titles with emoji indicators | `render_section_heading()` |
+| `EmptyState` | Placeholder for empty data with icon and message | `render_empty_state()` |
+| `CardFrame` | Framed card containers with optional footer | `render_card_frame()` |
+| `FileTableRow` | File listing with selection, favorite, size, status | `render_file_table_row()` |
+| `ProgressDetail` | Step-by-step progress with status icons | `render_progress_detail()` |
+
+### Toast System
+```rust
+// Add a toast notification
+app.add_toast(ToastType::Success, "Operation completed".to_string());
+
+// Auto-dismiss after 5 seconds
+// Dismiss manually with 'n' key
+```
+
+### Status Badge Usage
+```rust
+StatusBadge::Processing  // "⏳ Processing"
+StatusBadge::Success     // "✓ Success"
+StatusBadge::Failed      // "✗ Failed"
+StatusBadge::Warning     // "⚠ Warning"
+StatusBadge::Pending     // "○ Pending"
+```
+
+## Bug Fixes (Latest)
+
+### Extension Dot Fix
+Fixed missing dot before file extension in timestamp-based filenames:
+- Before: `20260720150238jpg` (incorrect)
+- After: `20260720150238.jpg` (correct)
+
+### UTF-8 Safety
+Fixed `truncate_str` panic on multi-byte characters (Japanese, emoji) by checking char boundaries before slicing.
+
+### NaN Safety
+Fixed `partial_cmp().unwrap()` panic in file sorting when file sizes contain NaN values. Now uses `unwrap_or(Ordering::Equal)` for safe comparison.
+
 ### Key Bindings (New)
 | Key | Action |
 |-----|--------|
@@ -343,6 +391,16 @@ Toggle memory-mapped file I/O for improved performance on large files.
 | `Shift+I` | Config Import/Export |
 | `Shift+P` | Plugins |
 | `Shift+S` | Statusbar Customization |
+| `n` | Dismiss toast notification |
+
+### Ferrocopy UI Components
+| Component | Key | Description |
+|-----------|-----|-------------|
+| Toast | Auto | Shows success/error/warning/info messages |
+| StatusBadge | Auto | Displays processing status |
+| ButtonVariant | Various | Different button styles for actions |
+| BadgeVariant | Various | Status indicators |
+| AlertVariant | Various | Alert messages with severity levels |
 
 ## Dependencies
 
@@ -354,3 +412,14 @@ Toggle memory-mapped file I/O for improved performance on large files.
 - `serde` / `serde_json` — 設定ファイル
 - `sysinfo` 0.30 — メモリ監視
 - `rayon` — 並列処理
+- `image` — 画像処理
+- `jxl-oxide` — JPEG XL エンコード/デコード
+- `blake3` — 高速ハッシュ
+- `glob` — パターンマッチング
+- `trash` — ゴミ箱移動
+- `zip` — ZIP アーカイブ
+- `open` — ファイル関連付け実行
+- `anyhow` / `thiserror` — エラーハンドリング
+- `log` / `env_logger` — ロギング
+- `num_cpus` — CPU コア検出
+- `zip-extract` — ZIP 展開
