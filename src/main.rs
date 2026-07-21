@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use image::GenericImageView;
-use log::{error, info, warn};
+use log::{error, info};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -345,6 +345,7 @@ struct FileFilter {
     name_pattern: String,
 }
 
+#[allow(dead_code)]
 impl FileFilter {
     fn matches(&self, path: &PathBuf) -> bool {
         // Extension filter
@@ -683,6 +684,7 @@ struct FileTag {
 
 // B3 #12: File tree node
 #[derive(Clone)]
+#[allow(dead_code)]
 struct FileTreeNode {
     name: String,
     path: String,
@@ -717,6 +719,7 @@ struct Notification {
 }
 
 // B3 #20: Keyboard macro
+#[allow(dead_code)]
 struct KeyMacro {
     name: String,
     keys: Vec<String>, // Key descriptions
@@ -916,6 +919,7 @@ impl Theme {
 
 // Toast notification with auto-dismiss
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Toast {
     id: u64,
     message: String,
@@ -924,6 +928,7 @@ struct Toast {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum ToastType {
     Info,
     Success,
@@ -931,8 +936,10 @@ enum ToastType {
     Warning,
 }
 
+#[allow(dead_code)]
 static NEXT_TOAST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+#[allow(dead_code)]
 impl Toast {
     fn new(message: impl Into<String>, toast_type: ToastType) -> Self {
         let id = NEXT_TOAST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -947,6 +954,7 @@ impl Toast {
 
 // Button variant styles
 #[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum ButtonVariant {
     Primary,
     Secondary,
@@ -957,6 +965,7 @@ enum ButtonVariant {
 
 // Badge variant styles
 #[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum BadgeVariant {
     Info,
     Success,
@@ -967,6 +976,7 @@ enum BadgeVariant {
 
 // Alert variant styles
 #[derive(Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 enum AlertVariant {
     Info,
     Success,
@@ -991,6 +1001,7 @@ fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
 }
 
 /// Render a styled button with variant
+#[allow(dead_code)]
 fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> Line<'static> {
     let (fg, _bg) = match variant {
         ButtonVariant::Primary => (Color::White, theme.primary),
@@ -1006,6 +1017,7 @@ fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> 
 }
 
 /// Render a badge with variant
+#[allow(dead_code)]
 fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'static> {
     let color = match variant {
         BadgeVariant::Info => theme.primary,
@@ -1021,6 +1033,7 @@ fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'stati
 }
 
 /// Render an alert box with icon, title, and message
+#[allow(dead_code)]
 fn render_alert(
     title: &str,
     message: &str,
@@ -1049,6 +1062,7 @@ fn render_alert(
 }
 
 /// Render a section heading with icon
+#[allow(dead_code)]
 fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
@@ -1080,6 +1094,7 @@ fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> 
 }
 
 /// Render a card/panel frame with border
+#[allow(dead_code)]
 fn render_card_frame<'a>(
     title: &str,
     content_lines: Vec<Line<'a>>,
@@ -1113,6 +1128,7 @@ fn render_card_frame<'a>(
 }
 
 /// Render a file table row with columns
+#[allow(dead_code)]
 fn render_file_table_row(
     icon: &str,
     name: &str,
@@ -1145,6 +1161,7 @@ fn render_file_table_row(
 }
 
 /// Render enhanced progress display with speed, ETA, elapsed
+#[allow(dead_code, clippy::too_many_arguments)]
 fn render_progress_detail(
     progress: f64,
     speed: &str,
@@ -1499,6 +1516,7 @@ impl MenuItem {
 // ============================================================
 
 #[derive(Clone, PartialEq)]
+#[allow(dead_code)]
 enum AppState {
     Splash, // Splash screen
     Menu,
@@ -1550,6 +1568,7 @@ enum AppState {
     KeybindCustom,      // Keybind customization
 }
 
+#[allow(dead_code)]
 struct App {
     state: AppState,
     menu_items: Vec<MenuItem>,
@@ -1785,6 +1804,7 @@ struct App {
     toast_timer: Instant,
 }
 
+#[allow(dead_code)]
 impl App {
     fn new() -> Self {
         let config = Config::load();
@@ -2040,10 +2060,9 @@ impl App {
 
                 let new_name = if is_digit_underscore_digit(&file_stem) {
                     Some(format!("{}.{}", file_stem.replace("_", ""), ext))
-                } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-                    Some(format!("{}.{}", cleaned, ext))
                 } else {
-                    None
+                    remove_trailing_parentheses(&file_stem)
+                        .map(|cleaned| format!("{}.{}", cleaned, ext))
                 };
 
                 if let Some(new) = new_name {
@@ -2082,7 +2101,7 @@ impl App {
         }
     }
 
-    fn is_image_file(&self, path: &PathBuf) -> bool {
+    fn is_image_file(&self, path: &Path) -> bool {
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| {
@@ -2122,7 +2141,7 @@ impl App {
         let step_progress = self.step_progress.clone();
         let files_processed = self.files_processed.clone();
         let step_enabled = self.step_enabled.clone();
-        let is_paused = self.is_paused.clone();
+        let _is_paused = self.is_paused.clone();
         let is_interrupted = self.is_interrupted.clone();
         let undo_log = Arc::new(Mutex::new(self.undo_log.clone()));
         let config = self.config.clone();
@@ -2418,7 +2437,7 @@ impl App {
             }
         }
         self.duplicate_groups
-            .sort_by(|a, b| b.files.len().cmp(&a.files.len()));
+            .sort_by_key(|a| std::cmp::Reverse(a.files.len()));
     }
 
     // Feature #4: Add to batch queue
@@ -2515,12 +2534,10 @@ impl App {
                     let p = entry.path();
                     if p.is_file() && self.is_image_file(&p) {
                         let dest = PathBuf::from(&self.config.dest).join(p.file_name().unwrap());
-                        if !dest.exists() {
-                            if fs::rename(&p, &dest).is_ok() {
-                                self.watch_processed += 1;
-                                if let Ok(mut logs) = self.logs.lock() {
-                                    logs.push(format!("Watch: moved {}", p.display()));
-                                }
+                        if !dest.exists() && fs::rename(&p, &dest).is_ok() {
+                            self.watch_processed += 1;
+                            if let Ok(mut logs) = self.logs.lock() {
+                                logs.push(format!("Watch: moved {}", p.display()));
                             }
                         }
                     }
@@ -2659,7 +2676,8 @@ impl App {
                 count,
             })
             .collect();
-        self.compression_stats.sort_by(|a, b| b.count.cmp(&a.count));
+        self.compression_stats
+            .sort_by_key(|a| std::cmp::Reverse(a.count));
     }
 
     // New #7: File classification
@@ -2982,7 +3000,7 @@ impl App {
         let mut nodes = Vec::new();
         if let Ok(entries) = fs::read_dir(dir) {
             let mut dirs: Vec<_> = entries.flatten().filter(|e| e.path().is_dir()).collect();
-            dirs.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            dirs.sort_by_key(|a| a.file_name());
             for entry in dirs {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -3004,7 +3022,7 @@ impl App {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            files.sort_by_key(|a| a.file_name());
             for entry in files.into_iter().take(20) {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -3244,7 +3262,7 @@ impl App {
         for entry in &files {
             let path = entry.path();
             let name = path.to_string_lossy().to_string();
-            let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let _size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             let ahash = calculate_ahash(&path).unwrap_or(0);
             let dhash = calculate_dhash(&path).unwrap_or(0);
             hashes.push((name, ahash, dhash));
@@ -3328,7 +3346,7 @@ impl App {
         }
 
         self.similar_groups
-            .sort_by(|a, b| b.files.len().cmp(&a.files.len()));
+            .sort_by_key(|a| std::cmp::Reverse(a.files.len()));
     }
 }
 
@@ -3336,6 +3354,7 @@ impl App {
 // Full Process
 // ============================================================
 
+#[allow(clippy::too_many_arguments)]
 fn run_full_process(
     config: &Config,
     step_enabled: &[bool],
@@ -3906,10 +3925,9 @@ fn run_with_progress(
             "rename" => {
                 if is_digit_underscore_digit(&file_stem) {
                     Some(format!("{}.{}", file_stem.replace("_", ""), ext))
-                } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-                    Some(format!("{}.{}", cleaned, ext))
                 } else {
-                    None
+                    remove_trailing_parentheses(&file_stem)
+                        .map(|cleaned| format!("{}.{}", cleaned, ext))
                 }
             }
             "timestamp" => {
@@ -4090,7 +4108,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         terminal.draw(|f| ui(f, app))?;
 
         app.frame_count += 1;
-        if app.frame_count % 5 == 0 {
+        if app.frame_count.is_multiple_of(5) {
             app.spinner_idx = (app.spinner_idx + 1) % SPINNER_CHARS.len();
         }
 
@@ -4100,7 +4118,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         }
 
         // Feature #16: Refresh memory every 60 frames
-        if app.frame_count % 60 == 0 {
+        if app.frame_count.is_multiple_of(60) {
             app.refresh_memory();
         }
 
@@ -4795,9 +4813,9 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                         app.dup_file_selected;
                                 }
                             }
-                            KeyCode::Char('x') => {
+                            KeyCode::Char('x')
                                 // Delete non-selected duplicates
-                                if app.dup_group_selected < app.duplicate_groups.len() {
+                                if app.dup_group_selected < app.duplicate_groups.len() => {
                                     let group = &app.duplicate_groups[app.dup_group_selected];
                                     let keep = group.selected;
                                     for (i, (path, _)) in group.files.iter().enumerate() {
@@ -4813,7 +4831,6 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                         ));
                                     }
                                 }
-                            }
                             _ => {}
                         },
                         // Feature #8: Stats
@@ -4822,10 +4839,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Up | KeyCode::Char('k') => {
                                 app.stats_scroll = app.stats_scroll.saturating_sub(1)
                             }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.stats_scroll < 20 {
-                                    app.stats_scroll += 1;
-                                }
+                            KeyCode::Down | KeyCode::Char('j') if app.stats_scroll < 20 => {
+                                app.stats_scroll += 1;
                             }
                             _ => {}
                         },
@@ -5038,10 +5053,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                     app.filter.name_pattern.pop();
                                 }
                             }
-                            KeyCode::Char(c) => {
-                                if app.filter_selected == 3 {
-                                    app.filter.name_pattern.push(c);
-                                }
+                            KeyCode::Char(c) if app.filter_selected == 3 => {
+                                app.filter.name_pattern.push(c);
                             }
                             _ => {}
                         },
@@ -5055,10 +5068,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                     app.info_selected -= 1;
                                 }
                             }
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if app.info_selected < app.preview_items.len().saturating_sub(1) {
-                                    app.info_selected += 1;
-                                }
+                            KeyCode::Down | KeyCode::Char('j')
+                                if app.info_selected
+                                    < app.preview_items.len().saturating_sub(1) =>
+                            {
+                                app.info_selected += 1;
                             }
                             _ => {}
                         },
@@ -5184,10 +5198,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                                 job.hour -= 1;
                                             }
                                         }
-                                        1 => {
-                                            if job.minute > 0 {
-                                                job.minute -= 1;
-                                            }
+                                        1 if job.minute > 0 => {
+                                            job.minute -= 1;
                                         }
                                         _ => {}
                                     }
@@ -5203,10 +5215,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                                 job.hour += 1;
                                             }
                                         }
-                                        1 => {
-                                            if job.minute < 59 {
-                                                job.minute += 1;
-                                            }
+                                        1 if job.minute < 59 => {
+                                            job.minute += 1;
                                         }
                                         _ => {}
                                     }
@@ -5913,10 +5923,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                                 let from = entry.path();
                                                 let to =
                                                     dst.join(from.file_name().unwrap_or_default());
-                                                if from.is_file() && !to.exists() {
-                                                    if std::fs::copy(&from, &to).is_ok() {
-                                                        copied += 1;
-                                                    }
+                                                if from.is_file()
+                                                    && !to.exists()
+                                                    && std::fs::copy(&from, &to).is_ok()
+                                                {
+                                                    copied += 1;
                                                 }
                                             }
                                         }
@@ -6116,7 +6127,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 
 fn notify_done(success: bool) {
     let _ = Command::new("powershell")
-        .args(&[
+        .args([
             "-NoProfile", "-Command",
             &format!(
                 r#"Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::{}; $n.Visible = $true; $n.ShowBalloonTip(5000, 'io-tool', '{}', [System.Windows.Forms.ToolTipIcon]::{})"#,
@@ -6363,7 +6374,7 @@ fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
         String::new()
     };
     let filter_info = if !app.filter.name_pattern.is_empty() || app.filter.min_size_kb > 0 {
-        format!(" │ Filter: ON")
+        " │ Filter: ON".to_string()
     } else {
         String::new()
     };
@@ -6702,6 +6713,7 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
         let items: Vec<ListItem> = app.preview_items[start..end]
             .iter()
             .map(|(old, new)| {
+                #[allow(clippy::if_same_then_else)]
                 let icon = if old.ends_with(".jxl") {
                     "  "
                 } else if old.ends_with(".jpg") || old.ends_with(".jpeg") {
@@ -7623,7 +7635,7 @@ fn render_profiles(f: &mut Frame, app: &mut App, area: Rect) {
 fn render_jxl_settings(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
-    let settings_items = vec![
+    let settings_items = [
         ("Quality", format!("{}", app.config.jxl_quality)),
         ("Lossless", format!("{}", app.config.jxl_lossless)),
         ("Save & Back", String::new()),
@@ -7781,7 +7793,7 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
         "↓ Desc"
     };
 
-    let settings_items = vec![
+    let settings_items = [
         ("Extensions", app.filter.extensions.join(", ")),
         ("Min Size (KB)", format!("{}", app.filter.min_size_kb)),
         ("Max Size (KB)", format!("{}", app.filter.max_size_kb)),
@@ -8771,7 +8783,7 @@ fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
 // Core processing functions
 // ============================================================
 
-fn is_image_file(path: &PathBuf) -> bool {
+fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| {
@@ -8928,7 +8940,7 @@ fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_unique_filename(path: &PathBuf, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut new_path = path.parent().unwrap().to_path_buf();
     new_path.push(name);
 
@@ -9010,7 +9022,7 @@ fn remove_trailing_parentheses(s: &str) -> Option<String> {
 
 fn convert_to_jxl(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
     let status = Command::new("powershell")
-        .args(&["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(r"Z:\Closet\bat\jpg-to-jxl.ps1")
         .arg("-convertPath")
         .arg(dest)
@@ -9080,7 +9092,7 @@ fn resize_images(dest: &str, max_w: u32, max_h: u32, log: &dyn Fn(String)) -> us
 // Watermark Overlay
 // ============================================================
 
-fn add_watermark(dest: &str, text: &str, log: &dyn Fn(String)) -> usize {
+fn add_watermark(dest: &str, _text: &str, log: &dyn Fn(String)) -> usize {
     use image::{Rgba, RgbaImage};
 
     let mut count = 0;
@@ -9248,8 +9260,7 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let left_items: Vec<ListItem> = app
         .batch_queue
         .iter()
-        .enumerate()
-        .map(|(i, job)| {
+        .map(|job| {
             let fname = std::path::Path::new(&job.path)
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -9379,8 +9390,7 @@ fn render_recent_files(f: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = app
         .recent_files
         .iter()
-        .enumerate()
-        .map(|(i, rf)| {
+        .map(|rf| {
             let fname = std::path::Path::new(&rf.path)
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
@@ -9711,7 +9721,7 @@ fn render_rename_pattern(f: &mut Frame, app: &mut App, area: Rect) {
                     ListItem::new(Line::from(vec![
                         Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
                         Span::styled("→ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(format!("{}", new), Style::default().fg(Color::Green)),
+                        Span::styled(new.to_string(), Style::default().fg(Color::Green)),
                     ]))
                 })
                 .collect()
@@ -9905,6 +9915,7 @@ fn render_notification_center(f: &mut Frame, app: &mut App, area: Rect) {
                 "success" => ("✔", Color::Green),
                 _ => ("•", Color::White),
             };
+            #[allow(clippy::if_same_then_else)]
             let read_marker = if notif.read { "  " } else { "  " };
             ListItem::new(Line::from(vec![
                 Span::raw(read_marker),
@@ -10303,9 +10314,12 @@ fn render_keybind_custom(f: &mut Frame, app: &mut App, area: Rect) {
 // Auto-update check
 // ============================================================
 
+#[allow(dead_code)]
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+#[allow(dead_code)]
 const GITHUB_REPO: &str = "HHKK0127/PixPipe";
 
+#[allow(dead_code)]
 #[derive(serde::Deserialize)]
 struct GitHubRelease {
     tag_name: String,
@@ -10313,6 +10327,7 @@ struct GitHubRelease {
     body: Option<String>,
 }
 
+#[allow(dead_code)]
 fn check_for_updates() -> Option<String> {
     let url = format!(
         "https://api.github.com/repos/{}/releases/latest",
