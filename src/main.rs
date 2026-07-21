@@ -2,6 +2,8 @@ mod config;
 mod core_mod;
 mod ui;
 
+use core_mod::files::{safe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_size};
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
@@ -73,33 +75,8 @@ const THEME_NAMES: &[&str] = &[
 // Safe Helper Functions
 // ============================================================
 
-fn safe_file_name(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-fn safe_file_stem(path: &Path) -> String {
-    path.file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-fn safe_extension(path: &Path) -> String {
-    path.extension()
-        .map(|e| e.to_string_lossy().to_string())
-        .unwrap_or_default()
-}
-
-fn safe_parent(path: &Path) -> PathBuf {
-    path.parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn safe_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
-}
+// safe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock
+// are now imported from core_mod::files
 
 // ============================================================
 // Config
@@ -1282,17 +1259,7 @@ fn _make_sub_progress_bar(label: &str, ratio: f64, width: usize) -> String {
 // Utility
 // ============================================================
 
-fn format_size(bytes: u64) -> String {
-    if bytes >= 1_073_741_824 {
-        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
-    } else if bytes >= 1_048_576 {
-        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
-    } else if bytes >= 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{} B", bytes)
-    }
-}
+// format_size is now imported from core_mod::files
 
 fn format_duration(secs: f64) -> String {
     if secs < 60.0 {
