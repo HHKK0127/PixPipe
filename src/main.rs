@@ -1,3 +1,7 @@
+mod ui;
+mod core_mod;
+mod config;
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
@@ -717,13 +721,13 @@ struct FileTag {
 // B3 #12: File tree node
 #[derive(Clone)]
 #[allow(dead_code)]
-struct FileTreeNode {
-    name: String,
-    path: String,
-    is_dir: bool,
-    expanded: bool,
-    depth: usize,
-    children: Vec<FileTreeNode>,
+pub struct FileTreeNode {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub expanded: bool,
+    pub depth: usize,
+    pub children: Vec<FileTreeNode>,
 }
 
 // B3 #13: Batch rename pattern
@@ -769,17 +773,17 @@ struct SimilarImageGroup {
 // Theme
 // ============================================================
 
-struct Theme {
-    primary: Color,
-    _secondary: Color,
-    accent: Color,
-    success: Color,
-    error: Color,
-    warning: Color,
-    muted: Color,
-    bg_highlight: Color,
-    bg: Color,
-    fg: Color,
+pub struct Theme {
+    pub primary: Color,
+    pub _secondary: Color,
+    pub accent: Color,
+    pub success: Color,
+    pub error: Color,
+    pub warning: Color,
+    pub muted: Color,
+    pub bg_highlight: Color,
+    pub bg: Color,
+    pub fg: Color,
 }
 
 impl Theme {
@@ -949,72 +953,9 @@ impl Theme {
 // UI Components (ferrocopy-inspired)
 // ============================================================
 
-// Toast notification with auto-dismiss
-#[derive(Debug, Clone)]
+// Toast notification with auto-dismiss (using ui::components)
 #[allow(dead_code)]
-struct Toast {
-    id: u64,
-    message: String,
-    toast_type: ToastType,
-    remaining: f32, // seconds until auto-dismiss
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code)]
-enum ToastType {
-    Info,
-    Success,
-    Error,
-    Warning,
-}
-
-#[allow(dead_code)]
-static NEXT_TOAST_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-
-#[allow(dead_code)]
-impl Toast {
-    fn new(message: impl Into<String>, toast_type: ToastType) -> Self {
-        let id = NEXT_TOAST_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self {
-            id,
-            message: message.into(),
-            toast_type,
-            remaining: 5.0,
-        }
-    }
-}
-
-// Button variant styles
-#[derive(Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-enum ButtonVariant {
-    Primary,
-    Secondary,
-    Success,
-    Danger,
-    Ghost,
-}
-
-// Badge variant styles
-#[derive(Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-enum BadgeVariant {
-    Info,
-    Success,
-    Warning,
-    Error,
-    Muted,
-}
-
-// Alert variant styles
-#[derive(Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-enum AlertVariant {
-    Info,
-    Success,
-    Warning,
-    Error,
-}
+use ui::components::{Toast, ToastType, ButtonVariant, BadgeVariant, AlertVariant};
 
 /// Render a status badge with icon and color
 fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
@@ -1612,239 +1553,239 @@ enum AppState {
 }
 
 #[allow(dead_code)]
-struct App {
-    state: AppState,
-    menu_items: Vec<MenuItem>,
-    selected: usize,
-    config: Config,
-    history: History,
-    undo_log: UndoLog,
-    theme_idx: usize,
-    dry_run: bool,
+pub struct App {
+    pub state: AppState,
+    pub menu_items: Vec<MenuItem>,
+    pub selected: usize,
+    pub config: Config,
+    pub history: History,
+    pub undo_log: UndoLog,
+    pub theme_idx: usize,
+    pub dry_run: bool,
     // Splash
-    splash_start: Instant,
-    splash_duration: Duration,
+    pub splash_start: Instant,
+    pub splash_duration: Duration,
     // Step selection
-    step_enabled: Vec<bool>,
-    step_selected: usize,
+    pub step_enabled: Vec<bool>,
+    pub step_selected: usize,
     // Preview
-    preview_items: Vec<(String, String)>,
-    preview_scroll: usize,
-    preview_file_count: usize,
-    preview_total_size: u64,
+    pub preview_items: Vec<(String, String)>,
+    pub preview_scroll: usize,
+    pub preview_file_count: usize,
+    pub preview_total_size: u64,
     // Processing
-    logs: Arc<Mutex<Vec<String>>>,
-    progress: Arc<Mutex<f64>>,
-    progress_detail: Arc<Mutex<String>>,
-    current_step: Arc<Mutex<String>>,
-    is_processing: Arc<Mutex<bool>>,
-    errors: Arc<Mutex<Vec<String>>>,
-    step_progress: Arc<Mutex<Vec<f64>>>,
-    start_time: Arc<Mutex<Option<Instant>>>,
-    files_processed: Arc<Mutex<usize>>,
+    pub logs: Arc<Mutex<Vec<String>>>,
+    pub progress: Arc<Mutex<f64>>,
+    pub progress_detail: Arc<Mutex<String>>,
+    pub current_step: Arc<Mutex<String>>,
+    pub is_processing: Arc<Mutex<bool>>,
+    pub errors: Arc<Mutex<Vec<String>>>,
+    pub step_progress: Arc<Mutex<Vec<f64>>>,
+    pub start_time: Arc<Mutex<Option<Instant>>>,
+    pub files_processed: Arc<Mutex<usize>>,
     // Log search
-    search_mode: bool,
-    search_query: String,
-    filtered_log_indices: Vec<usize>,
+    pub search_mode: bool,
+    pub search_query: String,
+    pub filtered_log_indices: Vec<usize>,
     // Settings
-    settings_selected: usize,
+    pub settings_selected: usize,
     // Batch queue (Feature #4)
-    batch_queue: Vec<BatchJob>,
-    batch_selected: usize,
-    batch_adding: bool,
-    batch_input: String,
+    pub batch_queue: Vec<BatchJob>,
+    pub batch_selected: usize,
+    pub batch_adding: bool,
+    pub batch_input: String,
     // Animation
-    spinner_idx: usize,
-    frame_count: u64,
+    pub spinner_idx: usize,
+    pub frame_count: u64,
     // Feature #2: Pause/Resume
-    is_paused: Arc<Mutex<bool>>,
-    is_interrupted: Arc<Mutex<bool>>, // Esc to interrupt processing
-    checkpoint: Arc<Mutex<Option<Checkpoint>>>,
+    pub is_paused: Arc<Mutex<bool>>,
+    pub is_interrupted: Arc<Mutex<bool>>, // Esc to interrupt processing
+    pub checkpoint: Arc<Mutex<Option<Checkpoint>>>,
     // Feature #3: Duplicate groups
-    duplicate_groups: Vec<DuplicateGroup>,
-    dup_group_selected: usize,
-    dup_file_selected: usize,
+    pub duplicate_groups: Vec<DuplicateGroup>,
+    pub dup_group_selected: usize,
+    pub dup_file_selected: usize,
     // Feature #6, #7: Filter & Sort
-    filter: FileFilter,
-    sort_config: SortConfig,
-    filter_active: bool,
-    filter_selected: usize,
+    pub filter: FileFilter,
+    pub sort_config: SortConfig,
+    pub filter_active: bool,
+    pub filter_selected: usize,
     // Feature #8: Stats
-    stats_scroll: usize,
+    pub stats_scroll: usize,
     // Feature #9: Profiles
-    profile_selected: usize,
-    profile_input: String,
-    profile_adding: bool,
+    pub profile_selected: usize,
+    pub profile_input: String,
+    pub profile_adding: bool,
     // Feature #11: Info panel
-    info_selected: usize,
+    pub info_selected: usize,
     // Feature #13: Confirm dialog
-    confirm_action: Option<ConfirmAction>,
-    confirm_yes: bool,
+    pub confirm_action: Option<ConfirmAction>,
+    pub confirm_yes: bool,
     // Feature #14: Help
-    help_scroll: usize,
+    pub help_scroll: usize,
     // Feature #15: State restore
-    state_store: AppStateStore,
+    pub state_store: AppStateStore,
     // Feature #16: Memory monitoring
-    sys_info: System,
+    pub sys_info: System,
     // Feature #17: Error retry
-    retry_count: usize,
+    pub retry_count: usize,
     // Feature #20: Watch mode
-    watch_active: bool,
-    watch_processed: usize,
-    watch_last_scan: Instant,
+    pub watch_active: bool,
+    pub watch_processed: usize,
+    pub watch_last_scan: Instant,
     // New features
     // New #1: Size comparison
-    size_comparisons: Vec<SizeComparison>,
-    size_compare_scroll: usize,
+    pub size_comparisons: Vec<SizeComparison>,
+    pub size_compare_scroll: usize,
     // New #3: Error details
-    error_details: Vec<ErrorDetail>,
-    error_scroll: usize,
+    pub error_details: Vec<ErrorDetail>,
+    pub error_scroll: usize,
     // New #4: Conversion presets
-    presets: Vec<ConversionPreset>,
-    preset_selected: usize,
-    active_preset: usize,
+    pub presets: Vec<ConversionPreset>,
+    pub preset_selected: usize,
+    pub active_preset: usize,
     // New #6: Compression stats
-    compression_stats: Vec<CompressionStat>,
-    compress_scroll: usize,
+    pub compression_stats: Vec<CompressionStat>,
+    pub compress_scroll: usize,
     // New #7: File classification
-    classify_rules: Vec<(String, String)>, // (pattern, target_folder)
-    classify_selected: usize,
-    classify_input: String,
-    classify_adding: bool,
+    pub classify_rules: Vec<(String, String)>, // (pattern, target_folder)
+    pub classify_selected: usize,
+    pub classify_input: String,
+    pub classify_adding: bool,
     // New #8: Metadata edit
-    meta_files: Vec<(String, bool)>, // (filename, selected)
-    meta_scroll: usize,
-    meta_field: usize, // 0=datetime, 1=artist, 2=remove all
+    pub meta_files: Vec<(String, bool)>, // (filename, selected)
+    pub meta_scroll: usize,
+    pub meta_field: usize, // 0=datetime, 1=artist, 2=remove all
     // New #9: Scheduler
-    scheduler_jobs: Vec<SchedulerJob>,
-    scheduler_selected: usize,
-    scheduler_editing: bool,
-    scheduler_field: usize,
+    pub scheduler_jobs: Vec<SchedulerJob>,
+    pub scheduler_selected: usize,
+    pub scheduler_editing: bool,
+    pub scheduler_field: usize,
     // New #10: History export
-    export_format: usize, // 0=CSV, 1=JSON
+    pub export_format: usize, // 0=CSV, 1=JSON
     // New #11: Theme editor
-    custom_themes: Vec<ThemeConfig>,
-    theme_edit_selected: usize,
-    theme_edit_field: usize,
+    pub custom_themes: Vec<ThemeConfig>,
+    pub theme_edit_selected: usize,
+    pub theme_edit_field: usize,
     // New #12: Dashboard customization
-    widget_layout: WidgetLayout,
-    dashboard_editing: bool,
-    dashboard_selected: usize,
+    pub widget_layout: WidgetLayout,
+    pub dashboard_editing: bool,
+    pub dashboard_selected: usize,
     // New #15: Statusbar customization
-    statusbar_items: Vec<(String, bool)>, // (name, enabled)
-    statusbar_selected: usize,
+    pub statusbar_items: Vec<(String, bool)>, // (name, enabled)
+    pub statusbar_selected: usize,
     // New #16: GPU acceleration
-    use_gpu: bool,
-    gpu_effort: u8, // 1-9
+    pub use_gpu: bool,
+    pub gpu_effort: u8, // 1-9
     // New #17: Memory-mapped I/O
-    use_mmap: bool,
+    pub use_mmap: bool,
     // New #18: Auto parallelism
-    auto_parallel: bool,
-    current_workers: usize,
-    cpu_threshold: f64,
+    pub auto_parallel: bool,
+    pub current_workers: usize,
+    pub cpu_threshold: f64,
     // New #19: Config import/export
-    config_io_selected: usize,
-    config_io_path: String,
-    config_io_adding: bool,
+    pub config_io_selected: usize,
+    pub config_io_path: String,
+    pub config_io_adding: bool,
     // New #20: Plugins
-    plugins: Vec<PluginInfo>,
-    plugin_selected: usize,
-    plugin_dir: String,
+    pub plugins: Vec<PluginInfo>,
+    pub plugin_selected: usize,
+    pub plugin_dir: String,
     // Batch 3 fields
     // B3 #1: Image preview
-    image_preview: Option<ImagePreview>,
-    preview_image_path: String,
+    pub image_preview: Option<ImagePreview>,
+    pub preview_image_path: String,
     // B3 #2: Vim-style navigation
-    vim_buffer: String,
+    pub vim_buffer: String,
     // B3 #3: Fuzzy finder
-    fuzzy_mode: bool,
-    fuzzy_query: String,
-    fuzzy_results: Vec<String>,
-    fuzzy_selected: usize,
+    pub fuzzy_mode: bool,
+    pub fuzzy_query: String,
+    pub fuzzy_results: Vec<String>,
+    pub fuzzy_selected: usize,
     // B3 #4: Multi-source watch
-    watch_dirs: Vec<String>,
-    watch_dir_selected: usize,
-    watch_dir_adding: bool,
-    watch_dir_input: String,
+    pub watch_dirs: Vec<String>,
+    pub watch_dir_selected: usize,
+    pub watch_dir_adding: bool,
+    pub watch_dir_input: String,
     // B3 #5: Drag and drop
-    drop_zone_active: bool,
-    drop_queue: Vec<String>,
+    pub drop_zone_active: bool,
+    pub drop_queue: Vec<String>,
     // B3 #6: Split pane
-    split_mode: bool,
-    split_left_scroll: usize,
-    split_right_scroll: usize,
+    pub split_mode: bool,
+    pub split_left_scroll: usize,
+    pub split_right_scroll: usize,
     // B3 #7: Breadcrumb
-    breadcrumb: Vec<String>,
+    pub breadcrumb: Vec<String>,
     // B3 #8: Quick actions
-    quick_actions: Vec<(String, usize)>, // (label, action_index)
-    quick_selected: usize,
+    pub quick_actions: Vec<(String, usize)>, // (label, action_index)
+    pub quick_selected: usize,
     // B3 #9: Recent files
-    recent_files: Vec<RecentFile>,
-    recent_scroll: usize,
+    pub recent_files: Vec<RecentFile>,
+    pub recent_scroll: usize,
     // B3 #10: Tag system
-    file_tags: Vec<FileTag>,
-    tag_selected: usize,
-    tag_input: String,
-    tag_adding: bool,
+    pub file_tags: Vec<FileTag>,
+    pub tag_selected: usize,
+    pub tag_input: String,
+    pub tag_adding: bool,
     // B3 #11: Side-by-side diff
-    diff_left: Vec<String>,
-    diff_right: Vec<String>,
-    diff_scroll: usize,
+    pub diff_left: Vec<String>,
+    pub diff_right: Vec<String>,
+    pub diff_scroll: usize,
     // B3 #12: File tree
-    file_tree: Vec<FileTreeNode>,
-    tree_selected: usize,
-    tree_scroll: usize,
+    pub file_tree: Vec<FileTreeNode>,
+    pub tree_selected: usize,
+    pub tree_scroll: usize,
     // B3 #13: Rename pattern
-    rename_patterns: Vec<RenamePattern>,
-    rename_selected: usize,
-    rename_input: String,
-    rename_field: usize, // 0=pattern, 1=replacement
+    pub rename_patterns: Vec<RenamePattern>,
+    pub rename_selected: usize,
+    pub rename_input: String,
+    pub rename_field: usize, // 0=pattern, 1=replacement
     // Rename preview
-    rename_preview_items: Vec<(String, String)>, // (old, new)
-    rename_preview_scroll: usize,
+    pub rename_preview_items: Vec<(String, String)>, // (old, new)
+    pub rename_preview_scroll: usize,
     // Folder sync
-    folder_sync_source: String,
-    folder_sync_dest: String,
-    folder_sync_watching: bool,
-    folder_sync_log: Vec<String>,
+    pub folder_sync_source: String,
+    pub folder_sync_dest: String,
+    pub folder_sync_watching: bool,
+    pub folder_sync_log: Vec<String>,
     // Keybind customization
-    keybind_selected: usize,
-    keybind_editing: bool,
-    keybind_input: String,
+    pub keybind_selected: usize,
+    pub keybind_editing: bool,
+    pub keybind_input: String,
     // B3 #14: Timeline
-    timeline_entries: Vec<TimelineEntry>,
-    timeline_scroll: usize,
+    pub timeline_entries: Vec<TimelineEntry>,
+    pub timeline_scroll: usize,
     // B3 #15: Startup wizard
-    wizard_step: usize,
-    wizard_done: bool,
+    pub wizard_step: usize,
+    pub wizard_done: bool,
     // B3 #16: Command palette
-    palette_open: bool,
-    palette_query: String,
-    palette_results: Vec<(String, usize)>, // (label, menu_idx)
-    palette_selected: usize,
+    pub palette_open: bool,
+    pub palette_query: String,
+    pub palette_results: Vec<(String, usize)>, // (label, menu_idx)
+    pub palette_selected: usize,
     // B3 #17: Notification center
-    notifications: Vec<Notification>,
-    notif_scroll: usize,
+    pub notifications: Vec<Notification>,
+    pub notif_scroll: usize,
     // B3 #18: Widget system
-    widgets: Vec<(String, bool)>, // (name, visible)
-    widget_selected: usize,
+    pub widgets: Vec<(String, bool)>, // (name, visible)
+    pub widget_selected: usize,
     // B3 #19: Export report
-    report_format: usize, // 0=HTML, 1=Markdown
-    report_path: String,
+    pub report_format: usize, // 0=HTML, 1=Markdown
+    pub report_path: String,
     // B3 #20: Keyboard macro
-    macros: Vec<KeyMacro>,
-    macro_selected: usize,
-    macro_recording: bool,
-    macro_buffer: Vec<String>,
+    pub macros: Vec<KeyMacro>,
+    pub macro_selected: usize,
+    pub macro_recording: bool,
+    pub macro_buffer: Vec<String>,
     // Similar image search
-    similar_groups: Vec<SimilarImageGroup>,
-    similar_selected: usize,
-    similar_file_selected: usize,
-    similar_threshold: u32, // Hamming distance threshold (0-64)
-    similar_scroll: usize,
+    pub similar_groups: Vec<SimilarImageGroup>,
+    pub similar_selected: usize,
+    pub similar_file_selected: usize,
+    pub similar_threshold: u32, // Hamming distance threshold (0-64)
+    pub similar_scroll: usize,
     // Toast notifications (ferrocopy-inspired)
-    toasts: Vec<Toast>,
-    toast_timer: Instant,
+    pub toasts: Vec<Toast>,
+    pub toast_timer: Instant,
 }
 
 #[allow(dead_code)]
@@ -2064,7 +2005,7 @@ impl App {
     }
 
     fn update_toasts(&mut self) {
-        let elapsed = self.toast_timer.elapsed().as_secs_f32();
+        let elapsed = self.toast_timer.elapsed().as_secs_f64();
         self.toast_timer = Instant::now();
         self.toasts.retain_mut(|t| {
             t.remaining -= elapsed;

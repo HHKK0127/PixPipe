@@ -24,3 +24,4 @@ notify = "7.0"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 blake3 = "1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+toml = "0.8"

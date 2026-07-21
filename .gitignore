@@ -3,3 +3,4 @@
 *.pdb
 execution.log
 config.json
+.tmp.driveupload/
