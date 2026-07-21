@@ -1,5 +1,6 @@
 mod config;
 mod core_mod;
+mod event_handler;
 mod ui;
 
 use core_mod::files::{
