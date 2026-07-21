@@ -2,6 +2,7 @@ mod config;
 mod core_mod;
 mod event_handler;
 mod ui;
+mod utils;
 
 use core_mod::files::{
     format_size, safe_extension, safe_file_name, safe_file_stem, safe_lock, safe_parent,
