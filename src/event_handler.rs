@@ -2,9 +2,10 @@
 //!
 //! キーボード、マウス、その他のイベントを処理します。
 
+#![allow(dead_code)]
+
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use std::io;
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
 use crate::AppState;
 

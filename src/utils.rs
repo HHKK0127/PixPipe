@@ -2,10 +2,7 @@
 //!
 //! 共通のヘルパー関数を提供します。
 
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-};
+#![allow(dead_code)]
 
 /// 文字列を指定長に切り詰める
 ///
