@@ -1,6 +1,8 @@
 // Config Module - Configuration management for PixPipe
 // This module handles settings, presets, and configuration persistence.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

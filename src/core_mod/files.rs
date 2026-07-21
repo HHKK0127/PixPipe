@@ -1,6 +1,8 @@
 // Files Module - File operations for PixPipe
 // This module contains all file I/O and processing logic.
 
+#![allow(dead_code)]
+
 use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 

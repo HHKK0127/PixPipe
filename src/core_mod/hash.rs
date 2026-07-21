@@ -1,6 +1,8 @@
 // Hash Module - Hashing and deduplication for PixPipe
 // This module contains all hash computation and duplicate detection logic.
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

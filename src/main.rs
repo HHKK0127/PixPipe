@@ -106,7 +106,7 @@ fn safe_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct Config {
+pub(crate) struct Config {
     twitter_src: String,
     download_src: String,
     dest: String,
@@ -211,7 +211,7 @@ struct HistoryEntry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-struct History {
+pub(crate) struct History {
     entries: Vec<HistoryEntry>,
     total_runs: usize,
     total_files_processed: usize,
@@ -256,7 +256,7 @@ struct UndoEntry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-struct UndoLog {
+pub(crate) struct UndoLog {
     entries: Vec<UndoEntry>,
 }
 
@@ -352,7 +352,7 @@ struct Profile {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct BatchJob {
+pub(crate) struct BatchJob {
     path: String,
     status: String, // pending, processing, done, error
     files_processed: usize,
@@ -363,7 +363,7 @@ struct BatchJob {
 // ============================================================
 
 #[derive(Clone)]
-struct DuplicateGroup {
+pub(crate) struct DuplicateGroup {
     hash: String,
     files: Vec<(String, u64)>, // (path, size)
     selected: usize,
@@ -374,7 +374,7 @@ struct DuplicateGroup {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-struct FileFilter {
+pub(crate) struct FileFilter {
     extensions: Vec<String>,
     min_size_kb: u64,
     max_size_kb: u64,
@@ -434,7 +434,7 @@ enum SortField {
 }
 
 #[derive(Clone)]
-struct SortConfig {
+pub(crate) struct SortConfig {
     field: SortField,
     ascending: bool,
 }
@@ -453,7 +453,7 @@ impl Default for SortConfig {
 // ============================================================
 
 #[derive(Clone, PartialEq)]
-enum ConfirmAction {
+pub(crate) enum ConfirmAction {
     StartProcessing,
     ClearHistory,
     ClearUndo,
@@ -464,7 +464,7 @@ enum ConfirmAction {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-struct Checkpoint {
+pub(crate) struct Checkpoint {
     step: usize,
     files_processed: usize,
     timestamp: String,
@@ -475,7 +475,7 @@ struct Checkpoint {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone, Default)]
-struct AppStateStore {
+pub(crate) struct AppStateStore {
     last_menu_idx: usize,
     last_theme_idx: usize,
     last_dry_run: bool,
@@ -506,7 +506,7 @@ impl AppStateStore {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct ConversionPreset {
+pub(crate) struct ConversionPreset {
     name: String,
     quality: u8,
     lossless: bool,
@@ -560,7 +560,7 @@ impl ConversionPreset {
 // ============================================================
 
 #[derive(Clone)]
-struct SizeComparison {
+pub(crate) struct SizeComparison {
     filename: String,
     original_size: u64,
     converted_size: u64,
@@ -572,7 +572,7 @@ struct SizeComparison {
 // ============================================================
 
 #[derive(Clone)]
-struct ErrorDetail {
+pub(crate) struct ErrorDetail {
     filename: String,
     error_msg: String,
     timestamp: String,
@@ -584,7 +584,7 @@ struct ErrorDetail {
 // ============================================================
 
 #[derive(Clone)]
-struct CompressionStat {
+pub(crate) struct CompressionStat {
     format: String,
     original_size: u64,
     converted_size: u64,
@@ -596,7 +596,7 @@ struct CompressionStat {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct SchedulerJob {
+pub(crate) struct SchedulerJob {
     name: String,
     hour: u8,
     minute: u8,
@@ -623,7 +623,7 @@ impl Default for SchedulerJob {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct ThemeConfig {
+pub(crate) struct ThemeConfig {
     name: String,
     primary: (u8, u8, u8),
     secondary: (u8, u8, u8),
@@ -660,7 +660,7 @@ impl Default for ThemeConfig {
 // ============================================================
 
 #[derive(Serialize, Deserialize, Clone)]
-struct WidgetLayout {
+pub(crate) struct WidgetLayout {
     show_summary: bool,
     show_chart: bool,
     show_history: bool,
@@ -685,7 +685,7 @@ impl Default for WidgetLayout {
 // ============================================================
 
 #[derive(Clone)]
-struct PluginInfo {
+pub(crate) struct PluginInfo {
     name: String,
     _path: String,
     enabled: bool,
@@ -697,7 +697,7 @@ struct PluginInfo {
 // ============================================================
 
 // B3 #1: Image preview (ASCII art)
-struct ImagePreview {
+pub(crate) struct ImagePreview {
     ascii_lines: Vec<String>,
     width: usize,
     height: usize,
@@ -705,7 +705,7 @@ struct ImagePreview {
 }
 
 // B3 #9: Recent files
-struct RecentFile {
+pub(crate) struct RecentFile {
     path: String,
     processed_at: String,
     file_type: String,
@@ -713,7 +713,7 @@ struct RecentFile {
 }
 
 // B3 #10: Tag system
-struct FileTag {
+pub(crate) struct FileTag {
     file_pattern: String,
     tags: Vec<String>,
 }
@@ -731,7 +731,7 @@ pub struct FileTreeNode {
 }
 
 // B3 #13: Batch rename pattern
-struct RenamePattern {
+pub(crate) struct RenamePattern {
     pattern: String,
     replacement: String,
     preview: Vec<(String, String)>, // (old_name, new_name)
@@ -739,7 +739,7 @@ struct RenamePattern {
 }
 
 // B3 #14: Processing timeline entry
-struct TimelineEntry {
+pub(crate) struct TimelineEntry {
     timestamp: String,
     event_type: String, // "start", "progress", "complete", "error"
     description: String,
@@ -747,7 +747,7 @@ struct TimelineEntry {
 }
 
 // B3 #17: Notification
-struct Notification {
+pub(crate) struct Notification {
     message: String,
     timestamp: String,
     level: String, // "info", "warning", "error", "success"
@@ -756,14 +756,14 @@ struct Notification {
 
 // B3 #20: Keyboard macro
 #[allow(dead_code)]
-struct KeyMacro {
+pub(crate) struct KeyMacro {
     name: String,
     keys: Vec<String>, // Key descriptions
     recording: bool,
 }
 
 // Similar image search
-struct SimilarImageGroup {
+pub(crate) struct SimilarImageGroup {
     hash: u64,
     files: Vec<(String, u64)>, // (path, file_size)
     hash_type: String,         // "aHash" or "dHash"
@@ -1307,7 +1307,7 @@ fn format_duration(secs: f64) -> String {
 // ============================================================
 
 #[derive(Clone, Copy, PartialEq)]
-enum MenuItem {
+pub(crate) enum MenuItem {
     FullProcess,
     RenameOnly,
     TimestampRename,
@@ -1501,7 +1501,7 @@ impl MenuItem {
 
 #[derive(Clone, PartialEq)]
 #[allow(dead_code)]
-enum AppState {
+pub(crate) enum AppState {
     Splash, // Splash screen
     Menu,
     StepSelect,
@@ -1554,238 +1554,238 @@ enum AppState {
 
 #[allow(dead_code)]
 pub struct App {
-    pub state: AppState,
-    pub menu_items: Vec<MenuItem>,
-    pub selected: usize,
-    pub config: Config,
-    pub history: History,
-    pub undo_log: UndoLog,
-    pub theme_idx: usize,
-    pub dry_run: bool,
+    pub(crate) state: AppState,
+    pub(crate) menu_items: Vec<MenuItem>,
+    pub(crate) selected: usize,
+    pub(crate) config: Config,
+    pub(crate) history: History,
+    pub(crate) undo_log: UndoLog,
+    pub(crate) theme_idx: usize,
+    pub(crate) dry_run: bool,
     // Splash
-    pub splash_start: Instant,
-    pub splash_duration: Duration,
+    pub(crate) splash_start: Instant,
+    pub(crate) splash_duration: Duration,
     // Step selection
-    pub step_enabled: Vec<bool>,
-    pub step_selected: usize,
+    pub(crate) step_enabled: Vec<bool>,
+    pub(crate) step_selected: usize,
     // Preview
-    pub preview_items: Vec<(String, String)>,
-    pub preview_scroll: usize,
-    pub preview_file_count: usize,
-    pub preview_total_size: u64,
+    pub(crate) preview_items: Vec<(String, String)>,
+    pub(crate) preview_scroll: usize,
+    pub(crate) preview_file_count: usize,
+    pub(crate) preview_total_size: u64,
     // Processing
-    pub logs: Arc<Mutex<Vec<String>>>,
-    pub progress: Arc<Mutex<f64>>,
-    pub progress_detail: Arc<Mutex<String>>,
-    pub current_step: Arc<Mutex<String>>,
-    pub is_processing: Arc<Mutex<bool>>,
-    pub errors: Arc<Mutex<Vec<String>>>,
-    pub step_progress: Arc<Mutex<Vec<f64>>>,
-    pub start_time: Arc<Mutex<Option<Instant>>>,
-    pub files_processed: Arc<Mutex<usize>>,
+    pub(crate) logs: Arc<Mutex<Vec<String>>>,
+    pub(crate) progress: Arc<Mutex<f64>>,
+    pub(crate) progress_detail: Arc<Mutex<String>>,
+    pub(crate) current_step: Arc<Mutex<String>>,
+    pub(crate) is_processing: Arc<Mutex<bool>>,
+    pub(crate) errors: Arc<Mutex<Vec<String>>>,
+    pub(crate) step_progress: Arc<Mutex<Vec<f64>>>,
+    pub(crate) start_time: Arc<Mutex<Option<Instant>>>,
+    pub(crate) files_processed: Arc<Mutex<usize>>,
     // Log search
-    pub search_mode: bool,
-    pub search_query: String,
-    pub filtered_log_indices: Vec<usize>,
+    pub(crate) search_mode: bool,
+    pub(crate) search_query: String,
+    pub(crate) filtered_log_indices: Vec<usize>,
     // Settings
-    pub settings_selected: usize,
+    pub(crate) settings_selected: usize,
     // Batch queue (Feature #4)
-    pub batch_queue: Vec<BatchJob>,
-    pub batch_selected: usize,
-    pub batch_adding: bool,
-    pub batch_input: String,
+    pub(crate) batch_queue: Vec<BatchJob>,
+    pub(crate) batch_selected: usize,
+    pub(crate) batch_adding: bool,
+    pub(crate) batch_input: String,
     // Animation
-    pub spinner_idx: usize,
-    pub frame_count: u64,
+    pub(crate) spinner_idx: usize,
+    pub(crate) frame_count: u64,
     // Feature #2: Pause/Resume
-    pub is_paused: Arc<Mutex<bool>>,
-    pub is_interrupted: Arc<Mutex<bool>>, // Esc to interrupt processing
-    pub checkpoint: Arc<Mutex<Option<Checkpoint>>>,
+    pub(crate) is_paused: Arc<Mutex<bool>>,
+    pub(crate) is_interrupted: Arc<Mutex<bool>>, // Esc to interrupt processing
+    pub(crate) checkpoint: Arc<Mutex<Option<Checkpoint>>>,
     // Feature #3: Duplicate groups
-    pub duplicate_groups: Vec<DuplicateGroup>,
-    pub dup_group_selected: usize,
-    pub dup_file_selected: usize,
+    pub(crate) duplicate_groups: Vec<DuplicateGroup>,
+    pub(crate) dup_group_selected: usize,
+    pub(crate) dup_file_selected: usize,
     // Feature #6, #7: Filter & Sort
-    pub filter: FileFilter,
-    pub sort_config: SortConfig,
-    pub filter_active: bool,
-    pub filter_selected: usize,
+    pub(crate) filter: FileFilter,
+    pub(crate) sort_config: SortConfig,
+    pub(crate) filter_active: bool,
+    pub(crate) filter_selected: usize,
     // Feature #8: Stats
-    pub stats_scroll: usize,
+    pub(crate) stats_scroll: usize,
     // Feature #9: Profiles
-    pub profile_selected: usize,
-    pub profile_input: String,
-    pub profile_adding: bool,
+    pub(crate) profile_selected: usize,
+    pub(crate) profile_input: String,
+    pub(crate) profile_adding: bool,
     // Feature #11: Info panel
-    pub info_selected: usize,
+    pub(crate) info_selected: usize,
     // Feature #13: Confirm dialog
-    pub confirm_action: Option<ConfirmAction>,
-    pub confirm_yes: bool,
+    pub(crate) confirm_action: Option<ConfirmAction>,
+    pub(crate) confirm_yes: bool,
     // Feature #14: Help
-    pub help_scroll: usize,
+    pub(crate) help_scroll: usize,
     // Feature #15: State restore
-    pub state_store: AppStateStore,
+    pub(crate) state_store: AppStateStore,
     // Feature #16: Memory monitoring
-    pub sys_info: System,
+    pub(crate) sys_info: System,
     // Feature #17: Error retry
-    pub retry_count: usize,
+    pub(crate) retry_count: usize,
     // Feature #20: Watch mode
-    pub watch_active: bool,
-    pub watch_processed: usize,
-    pub watch_last_scan: Instant,
+    pub(crate) watch_active: bool,
+    pub(crate) watch_processed: usize,
+    pub(crate) watch_last_scan: Instant,
     // New features
     // New #1: Size comparison
-    pub size_comparisons: Vec<SizeComparison>,
-    pub size_compare_scroll: usize,
+    pub(crate) size_comparisons: Vec<SizeComparison>,
+    pub(crate) size_compare_scroll: usize,
     // New #3: Error details
-    pub error_details: Vec<ErrorDetail>,
-    pub error_scroll: usize,
+    pub(crate) error_details: Vec<ErrorDetail>,
+    pub(crate) error_scroll: usize,
     // New #4: Conversion presets
-    pub presets: Vec<ConversionPreset>,
-    pub preset_selected: usize,
-    pub active_preset: usize,
+    pub(crate) presets: Vec<ConversionPreset>,
+    pub(crate) preset_selected: usize,
+    pub(crate) active_preset: usize,
     // New #6: Compression stats
-    pub compression_stats: Vec<CompressionStat>,
-    pub compress_scroll: usize,
+    pub(crate) compression_stats: Vec<CompressionStat>,
+    pub(crate) compress_scroll: usize,
     // New #7: File classification
-    pub classify_rules: Vec<(String, String)>, // (pattern, target_folder)
-    pub classify_selected: usize,
-    pub classify_input: String,
-    pub classify_adding: bool,
+    pub(crate) classify_rules: Vec<(String, String)>, // (pattern, target_folder)
+    pub(crate) classify_selected: usize,
+    pub(crate) classify_input: String,
+    pub(crate) classify_adding: bool,
     // New #8: Metadata edit
-    pub meta_files: Vec<(String, bool)>, // (filename, selected)
-    pub meta_scroll: usize,
-    pub meta_field: usize, // 0=datetime, 1=artist, 2=remove all
+    pub(crate) meta_files: Vec<(String, bool)>, // (filename, selected)
+    pub(crate) meta_scroll: usize,
+    pub(crate) meta_field: usize, // 0=datetime, 1=artist, 2=remove all
     // New #9: Scheduler
-    pub scheduler_jobs: Vec<SchedulerJob>,
-    pub scheduler_selected: usize,
-    pub scheduler_editing: bool,
-    pub scheduler_field: usize,
+    pub(crate) scheduler_jobs: Vec<SchedulerJob>,
+    pub(crate) scheduler_selected: usize,
+    pub(crate) scheduler_editing: bool,
+    pub(crate) scheduler_field: usize,
     // New #10: History export
-    pub export_format: usize, // 0=CSV, 1=JSON
+    pub(crate) export_format: usize, // 0=CSV, 1=JSON
     // New #11: Theme editor
-    pub custom_themes: Vec<ThemeConfig>,
-    pub theme_edit_selected: usize,
-    pub theme_edit_field: usize,
+    pub(crate) custom_themes: Vec<ThemeConfig>,
+    pub(crate) theme_edit_selected: usize,
+    pub(crate) theme_edit_field: usize,
     // New #12: Dashboard customization
-    pub widget_layout: WidgetLayout,
-    pub dashboard_editing: bool,
-    pub dashboard_selected: usize,
+    pub(crate) widget_layout: WidgetLayout,
+    pub(crate) dashboard_editing: bool,
+    pub(crate) dashboard_selected: usize,
     // New #15: Statusbar customization
-    pub statusbar_items: Vec<(String, bool)>, // (name, enabled)
-    pub statusbar_selected: usize,
+    pub(crate) statusbar_items: Vec<(String, bool)>, // (name, enabled)
+    pub(crate) statusbar_selected: usize,
     // New #16: GPU acceleration
-    pub use_gpu: bool,
-    pub gpu_effort: u8, // 1-9
+    pub(crate) use_gpu: bool,
+    pub(crate) gpu_effort: u8, // 1-9
     // New #17: Memory-mapped I/O
-    pub use_mmap: bool,
+    pub(crate) use_mmap: bool,
     // New #18: Auto parallelism
-    pub auto_parallel: bool,
-    pub current_workers: usize,
-    pub cpu_threshold: f64,
+    pub(crate) auto_parallel: bool,
+    pub(crate) current_workers: usize,
+    pub(crate) cpu_threshold: f64,
     // New #19: Config import/export
-    pub config_io_selected: usize,
-    pub config_io_path: String,
-    pub config_io_adding: bool,
+    pub(crate) config_io_selected: usize,
+    pub(crate) config_io_path: String,
+    pub(crate) config_io_adding: bool,
     // New #20: Plugins
-    pub plugins: Vec<PluginInfo>,
-    pub plugin_selected: usize,
-    pub plugin_dir: String,
+    pub(crate) plugins: Vec<PluginInfo>,
+    pub(crate) plugin_selected: usize,
+    pub(crate) plugin_dir: String,
     // Batch 3 fields
     // B3 #1: Image preview
-    pub image_preview: Option<ImagePreview>,
-    pub preview_image_path: String,
+    pub(crate) image_preview: Option<ImagePreview>,
+    pub(crate) preview_image_path: String,
     // B3 #2: Vim-style navigation
-    pub vim_buffer: String,
+    pub(crate) vim_buffer: String,
     // B3 #3: Fuzzy finder
-    pub fuzzy_mode: bool,
-    pub fuzzy_query: String,
-    pub fuzzy_results: Vec<String>,
-    pub fuzzy_selected: usize,
+    pub(crate) fuzzy_mode: bool,
+    pub(crate) fuzzy_query: String,
+    pub(crate) fuzzy_results: Vec<String>,
+    pub(crate) fuzzy_selected: usize,
     // B3 #4: Multi-source watch
-    pub watch_dirs: Vec<String>,
-    pub watch_dir_selected: usize,
-    pub watch_dir_adding: bool,
-    pub watch_dir_input: String,
+    pub(crate) watch_dirs: Vec<String>,
+    pub(crate) watch_dir_selected: usize,
+    pub(crate) watch_dir_adding: bool,
+    pub(crate) watch_dir_input: String,
     // B3 #5: Drag and drop
-    pub drop_zone_active: bool,
-    pub drop_queue: Vec<String>,
+    pub(crate) drop_zone_active: bool,
+    pub(crate) drop_queue: Vec<String>,
     // B3 #6: Split pane
-    pub split_mode: bool,
-    pub split_left_scroll: usize,
-    pub split_right_scroll: usize,
+    pub(crate) split_mode: bool,
+    pub(crate) split_left_scroll: usize,
+    pub(crate) split_right_scroll: usize,
     // B3 #7: Breadcrumb
-    pub breadcrumb: Vec<String>,
+    pub(crate) breadcrumb: Vec<String>,
     // B3 #8: Quick actions
-    pub quick_actions: Vec<(String, usize)>, // (label, action_index)
-    pub quick_selected: usize,
+    pub(crate) quick_actions: Vec<(String, usize)>, // (label, action_index)
+    pub(crate) quick_selected: usize,
     // B3 #9: Recent files
-    pub recent_files: Vec<RecentFile>,
-    pub recent_scroll: usize,
+    pub(crate) recent_files: Vec<RecentFile>,
+    pub(crate) recent_scroll: usize,
     // B3 #10: Tag system
-    pub file_tags: Vec<FileTag>,
-    pub tag_selected: usize,
-    pub tag_input: String,
-    pub tag_adding: bool,
+    pub(crate) file_tags: Vec<FileTag>,
+    pub(crate) tag_selected: usize,
+    pub(crate) tag_input: String,
+    pub(crate) tag_adding: bool,
     // B3 #11: Side-by-side diff
-    pub diff_left: Vec<String>,
-    pub diff_right: Vec<String>,
-    pub diff_scroll: usize,
+    pub(crate) diff_left: Vec<String>,
+    pub(crate) diff_right: Vec<String>,
+    pub(crate) diff_scroll: usize,
     // B3 #12: File tree
-    pub file_tree: Vec<FileTreeNode>,
-    pub tree_selected: usize,
-    pub tree_scroll: usize,
+    pub(crate) file_tree: Vec<FileTreeNode>,
+    pub(crate) tree_selected: usize,
+    pub(crate) tree_scroll: usize,
     // B3 #13: Rename pattern
-    pub rename_patterns: Vec<RenamePattern>,
-    pub rename_selected: usize,
-    pub rename_input: String,
-    pub rename_field: usize, // 0=pattern, 1=replacement
+    pub(crate) rename_patterns: Vec<RenamePattern>,
+    pub(crate) rename_selected: usize,
+    pub(crate) rename_input: String,
+    pub(crate) rename_field: usize, // 0=pattern, 1=replacement
     // Rename preview
-    pub rename_preview_items: Vec<(String, String)>, // (old, new)
-    pub rename_preview_scroll: usize,
+    pub(crate) rename_preview_items: Vec<(String, String)>, // (old, new)
+    pub(crate) rename_preview_scroll: usize,
     // Folder sync
-    pub folder_sync_source: String,
-    pub folder_sync_dest: String,
-    pub folder_sync_watching: bool,
-    pub folder_sync_log: Vec<String>,
+    pub(crate) folder_sync_source: String,
+    pub(crate) folder_sync_dest: String,
+    pub(crate) folder_sync_watching: bool,
+    pub(crate) folder_sync_log: Vec<String>,
     // Keybind customization
-    pub keybind_selected: usize,
-    pub keybind_editing: bool,
-    pub keybind_input: String,
+    pub(crate) keybind_selected: usize,
+    pub(crate) keybind_editing: bool,
+    pub(crate) keybind_input: String,
     // B3 #14: Timeline
-    pub timeline_entries: Vec<TimelineEntry>,
-    pub timeline_scroll: usize,
+    pub(crate) timeline_entries: Vec<TimelineEntry>,
+    pub(crate) timeline_scroll: usize,
     // B3 #15: Startup wizard
-    pub wizard_step: usize,
-    pub wizard_done: bool,
+    pub(crate) wizard_step: usize,
+    pub(crate) wizard_done: bool,
     // B3 #16: Command palette
-    pub palette_open: bool,
-    pub palette_query: String,
-    pub palette_results: Vec<(String, usize)>, // (label, menu_idx)
-    pub palette_selected: usize,
+    pub(crate) palette_open: bool,
+    pub(crate) palette_query: String,
+    pub(crate) palette_results: Vec<(String, usize)>, // (label, menu_idx)
+    pub(crate) palette_selected: usize,
     // B3 #17: Notification center
-    pub notifications: Vec<Notification>,
-    pub notif_scroll: usize,
+    pub(crate) notifications: Vec<Notification>,
+    pub(crate) notif_scroll: usize,
     // B3 #18: Widget system
-    pub widgets: Vec<(String, bool)>, // (name, visible)
-    pub widget_selected: usize,
+    pub(crate) widgets: Vec<(String, bool)>, // (name, visible)
+    pub(crate) widget_selected: usize,
     // B3 #19: Export report
-    pub report_format: usize, // 0=HTML, 1=Markdown
-    pub report_path: String,
+    pub(crate) report_format: usize, // 0=HTML, 1=Markdown
+    pub(crate) report_path: String,
     // B3 #20: Keyboard macro
-    pub macros: Vec<KeyMacro>,
-    pub macro_selected: usize,
-    pub macro_recording: bool,
-    pub macro_buffer: Vec<String>,
+    pub(crate) macros: Vec<KeyMacro>,
+    pub(crate) macro_selected: usize,
+    pub(crate) macro_recording: bool,
+    pub(crate) macro_buffer: Vec<String>,
     // Similar image search
-    pub similar_groups: Vec<SimilarImageGroup>,
-    pub similar_selected: usize,
-    pub similar_file_selected: usize,
-    pub similar_threshold: u32, // Hamming distance threshold (0-64)
-    pub similar_scroll: usize,
+    pub(crate) similar_groups: Vec<SimilarImageGroup>,
+    pub(crate) similar_selected: usize,
+    pub(crate) similar_file_selected: usize,
+    pub(crate) similar_threshold: u32, // Hamming distance threshold (0-64)
+    pub(crate) similar_scroll: usize,
     // Toast notifications (ferrocopy-inspired)
-    pub toasts: Vec<Toast>,
-    pub toast_timer: Instant,
+    pub(crate) toasts: Vec<Toast>,
+    pub(crate) toast_timer: Instant,
 }
 
 #[allow(dead_code)]
