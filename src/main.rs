@@ -127,7 +127,7 @@ impl Default for Config {
             days_to_check: 7,
             image_extensions: DEFAULT_IMAGE_EXTENSIONS
                 .iter()
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect(),
             min_file_size_kb: 0,
             max_workers: 4,
@@ -369,7 +369,7 @@ impl FileFilter {
                 if !self
                     .extensions
                     .iter()
-                    .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
+                    .any(|e| e.eq_ignore_ascii_case(&format!(".{ext}")))
                 {
                     return false;
                 }
@@ -947,7 +947,7 @@ fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
         _ => (" ", theme.muted, "Ready"),
     };
     Line::from(Span::styled(
-        format!(" {} {} ", icon, text),
+        format!(" {icon} {text} "),
         Style::default().fg(Color::White).bg(color),
     ))
 }
@@ -963,7 +963,7 @@ fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> 
         ButtonVariant::Ghost => (theme.fg, Color::Reset),
     };
     Line::from(Span::styled(
-        format!(" {} ", label),
+        format!(" {label} "),
         Style::default().fg(fg),
     ))
 }
@@ -979,7 +979,7 @@ fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'stati
         BadgeVariant::Muted => theme.muted,
     };
     Line::from(Span::styled(
-        format!(" {} ", text),
+        format!(" {text} "),
         Style::default().fg(Color::White).bg(color),
     ))
 }
@@ -1000,14 +1000,14 @@ fn render_alert(
     };
     vec![
         Line::from(vec![
-            Span::styled(format!("  {} ", icon), Style::default().fg(color)),
+            Span::styled(format!("  {icon} "), Style::default().fg(color)),
             Span::styled(
                 title.to_string(),
                 Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(Span::styled(
-            format!("    {}", message),
+            format!("    {message}"),
             Style::default().fg(theme.muted),
         )),
     ]
@@ -1017,7 +1017,7 @@ fn render_alert(
 #[allow(dead_code)]
 fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(format!("{icon} "), Style::default().fg(theme.accent)),
         Span::styled(
             text.to_string(),
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
@@ -1030,15 +1030,15 @@ fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> 
     vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("    {}", icon),
+            format!("    {icon}"),
             Style::default().fg(theme.muted),
         )),
         Line::from(Span::styled(
-            format!("    {}", title),
+            format!("    {title}"),
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            format!("    {}", message),
+            format!("    {message}"),
             Style::default().fg(theme.muted),
         )),
         Line::from(""),
@@ -1057,7 +1057,7 @@ fn render_card_frame<'a>(
     let mut lines = vec![Line::from(vec![
         Span::styled("┌", Style::default().fg(theme.muted)),
         Span::styled(
-            format!(" {} ", title),
+            format!(" {title} "),
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -1097,18 +1097,18 @@ fn render_file_table_row(
     };
     let bar = make_gauge_bar(progress, 10);
     Line::from(vec![
-        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(format!("{icon} "), Style::default().fg(theme.accent)),
         Span::styled(
             format!("{:<30}", truncate_str(name, 30)),
             Style::default().fg(theme.fg),
         ),
-        Span::styled(format!("{:>10}", size), Style::default().fg(theme.muted)),
-        Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+        Span::styled(format!("{size:>10}"), Style::default().fg(theme.muted)),
+        Span::styled(format!(" [{bar}]"), Style::default().fg(theme.primary)),
         Span::styled(
             format!(" {:>5.1}%", progress * 100.0),
             Style::default().fg(theme.accent),
         ),
-        Span::styled(format!(" {}", status), Style::default().fg(status_color)),
+        Span::styled(format!(" {status}"), Style::default().fg(status_color)),
     ])
 }
 
@@ -1134,23 +1134,23 @@ fn render_progress_detail(
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+            Span::styled(format!(" [{bar}]"), Style::default().fg(theme.primary)),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(format!("Speed: {}", speed), Style::default().fg(theme.fg)),
+            Span::styled(format!("Speed: {speed}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
-            Span::styled(format!("ETA: {}", eta), Style::default().fg(theme.fg)),
+            Span::styled(format!("ETA: {eta}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
             Span::styled(
-                format!("Elapsed: {}", elapsed),
+                format!("Elapsed: {elapsed}"),
                 Style::default().fg(theme.fg),
             ),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(
-                format!("Files: {}/{}", files_done, total_files),
+                format!("Files: {files_done}/{total_files}"),
                 Style::default().fg(theme.muted),
             ),
         ]),
@@ -1186,7 +1186,7 @@ fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme) {
         };
 
         let toast_block = Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", icon), Style::default().fg(color)),
+            Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
                 truncate_str(&toast.message, toast_width.saturating_sub(4)),
                 Style::default().fg(theme.fg),
@@ -1246,7 +1246,7 @@ fn make_gauge_bar(ratio: f64, width: usize) -> String {
     if filled < width && partial_idx > 0 {
         bar.push(GAUGE_CHARS[partial_idx.min(3)]);
     }
-    for _ in 0..empty.saturating_sub(if partial_idx > 0 { 1 } else { 0 }) {
+    for _ in 0..empty.saturating_sub(usize::from(partial_idx > 0)) {
         bar.push('░');
     }
     bar
@@ -1265,7 +1265,7 @@ fn _make_sub_progress_bar(label: &str, ratio: f64, width: usize) -> String {
 
 fn format_duration(secs: f64) -> String {
     if secs < 60.0 {
-        format!("{:.1}s", secs)
+        format!("{secs:.1}s")
     } else if secs < 3600.0 {
         format!("{}m {:.0}s", (secs / 60.0) as u32, secs % 60.0)
     } else {
@@ -2018,10 +2018,10 @@ impl App {
                 let ext = safe_extension(&path);
 
                 let new_name = if is_digit_underscore_digit(&file_stem) {
-                    Some(format!("{}.{}", file_stem.replace("_", ""), ext))
+                    Some(format!("{}.{}", file_stem.replace('_', ""), ext))
                 } else {
                     remove_trailing_parentheses(&file_stem)
-                        .map(|cleaned| format!("{}.{}", cleaned, ext))
+                        .map(|cleaned| format!("{cleaned}.{ext}"))
                 };
 
                 if let Some(new) = new_name {
@@ -2050,9 +2050,9 @@ impl App {
                         let datetime: chrono::DateTime<chrono::Local> = modified.into();
                         let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
                         let ext = safe_extension(&path);
-                        let new_name = format!("{}.{}", timestamp, ext);
+                        let new_name = format!("{timestamp}.{ext}");
                         if new_name != file_name {
-                            self.preview_items.push((file_name.to_string(), new_name));
+                            self.preview_items.push((file_name.clone(), new_name));
                         }
                     }
                 }
@@ -2063,13 +2063,12 @@ impl App {
     fn is_image_file(&self, path: &Path) -> bool {
         path.extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| {
+            .is_some_and(|ext| {
                 self.config
                     .image_extensions
                     .iter()
-                    .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
+                    .any(|e| e.eq_ignore_ascii_case(&format!(".{ext}")))
             })
-            .unwrap_or(false)
     }
 
     fn start_processing(&mut self) {
@@ -2244,8 +2243,8 @@ impl App {
                         &add_error,
                         &inc_files,
                     ) {
-                        Ok(n) => log(format!("✓ Renamed {} files", n)),
-                        Err(e) => log(format!("Error: {}", e)),
+                        Ok(n) => log(format!("✓ Renamed {n} files")),
+                        Err(e) => log(format!("Error: {e}")),
                     }
                 }
                 MenuItem::TimestampRename => {
@@ -2260,8 +2259,8 @@ impl App {
                         &add_error,
                         &inc_files,
                     ) {
-                        Ok(n) => log(format!("✓ Renamed {} files", n)),
-                        Err(e) => log(format!("Error: {}", e)),
+                        Ok(n) => log(format!("✓ Renamed {n} files")),
+                        Err(e) => log(format!("Error: {e}")),
                     }
                 }
                 MenuItem::ImageToJxl => {
@@ -2270,7 +2269,7 @@ impl App {
                     match convert_to_jxl(&config.dest) {
                         Ok(()) => log("✓ JXL conversion completed".into()),
                         Err(e) => {
-                            log(format!("Error: {}", e));
+                            log(format!("Error: {e}"));
                             add_error(e.to_string());
                         }
                     }
@@ -2330,12 +2329,12 @@ impl App {
                 match fs::rename(&from, &to) {
                     Ok(()) => {
                         if let Ok(mut logs) = self.logs.lock() {
-                            logs.push(format!("✓ Undo: {} → {}", new_path, old_path));
+                            logs.push(format!("✓ Undo: {new_path} → {old_path}"));
                         }
                     }
                     Err(e) => {
                         if let Ok(mut logs) = self.logs.lock() {
-                            logs.push(format!("✗ Undo failed: {}", e));
+                            logs.push(format!("✗ Undo failed: {e}"));
                         }
                     }
                 }
@@ -2605,7 +2604,7 @@ impl App {
         if let Ok(errs) = self.errors.lock() {
             for (i, err) in errs.iter().enumerate() {
                 self.error_details.push(ErrorDetail {
-                    filename: format!("file_{}", i),
+                    filename: format!("file_{i}"),
                     error_msg: err.clone(),
                     timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
                     _step: "Processing".into(),
@@ -2751,7 +2750,7 @@ impl App {
     fn apply_preset(&mut self, idx: usize) {
         if idx < self.presets.len() {
             let preset = self.presets[idx].clone();
-            self.config.jxl_quality = preset.quality as u32;
+            self.config.jxl_quality = u32::from(preset.quality);
             self.config.jxl_lossless = preset.lossless;
             self.active_preset = idx;
         }
@@ -2811,15 +2810,15 @@ impl App {
             return;
         }
         self.sys_info.refresh_all();
-        let cpu_usage = if !self.sys_info.cpus().is_empty() {
+        let cpu_usage = if self.sys_info.cpus().is_empty() {
+            0.0
+        } else {
             self.sys_info
                 .cpus()
                 .iter()
-                .map(|c| c.cpu_usage() as f64)
+                .map(|c| f64::from(c.cpu_usage()))
                 .sum::<f64>()
                 / self.sys_info.cpus().len() as f64
-        } else {
-            0.0
         };
         if cpu_usage < self.cpu_threshold * 0.7 && self.current_workers < 16 {
             self.current_workers += 1;
@@ -2843,7 +2842,7 @@ impl App {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
         // Simple ASCII art based on file size and type
-        let size = fs::metadata(&buf).map(|m| m.len()).unwrap_or(0);
+        let size = fs::metadata(&buf).map_or(0, |m| m.len());
         let ext = buf
             .extension()
             .map(|e| e.to_string_lossy().to_string())
@@ -2886,23 +2885,15 @@ impl App {
             }
         }
         self.fuzzy_results.sort_by(|a, b| {
-            let a_score = if a.to_lowercase().starts_with(&query) {
-                0
-            } else {
-                1
-            };
-            let b_score = if b.to_lowercase().starts_with(&query) {
-                0
-            } else {
-                1
-            };
+            let a_score = i32::from(!a.to_lowercase().starts_with(&query));
+            let b_score = i32::from(!b.to_lowercase().starts_with(&query));
             a_score.cmp(&b_score)
         });
     }
 
     // B3 #7: Update breadcrumb
     fn update_breadcrumb(&mut self, path: &str) {
-        self.breadcrumb = path.split(" > ").map(|s| s.to_string()).collect();
+        self.breadcrumb = path.split(" > ").map(std::string::ToString::to_string).collect();
     }
 
     // B3 #9: Add recent file
@@ -2962,7 +2953,7 @@ impl App {
         let mut nodes = Vec::new();
         if let Ok(entries) = fs::read_dir(dir) {
             let mut dirs: Vec<_> = entries.flatten().filter(|e| e.path().is_dir()).collect();
-            dirs.sort_by_key(|a| a.file_name());
+            dirs.sort_by_key(std::fs::DirEntry::file_name);
             for entry in dirs {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -2984,7 +2975,7 @@ impl App {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            files.sort_by_key(|a| a.file_name());
+            files.sort_by_key(std::fs::DirEntry::file_name);
             for entry in files.into_iter().take(20) {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -3164,7 +3155,7 @@ impl App {
         }
 
         let ext = if format == "html" { "html" } else { "md" };
-        let path = format!("report.{}", ext);
+        let path = format!("report.{ext}");
         fs::write(&path, &report)?;
         Ok(path)
     }
@@ -3224,7 +3215,7 @@ impl App {
         for entry in &files {
             let path = entry.path();
             let name = path.to_string_lossy().to_string();
-            let _size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let _size = fs::metadata(&path).map_or(0, |m| m.len());
             let ahash = calculate_ahash(&path).unwrap_or(0);
             let dhash = calculate_dhash(&path).unwrap_or(0);
             hashes.push((name, ahash, dhash));
@@ -3238,7 +3229,7 @@ impl App {
             }
             let mut group_files = vec![(
                 hashes[i].0.clone(),
-                fs::metadata(&hashes[i].0).map(|m| m.len()).unwrap_or(0),
+                fs::metadata(&hashes[i].0).map_or(0, |m| m.len()),
             )];
             used[i] = true;
 
@@ -3250,7 +3241,7 @@ impl App {
                 if dist <= self.similar_threshold {
                     group_files.push((
                         hashes[j].0.clone(),
-                        fs::metadata(&hashes[j].0).map(|m| m.len()).unwrap_or(0),
+                        fs::metadata(&hashes[j].0).map_or(0, |m| m.len()),
                     ));
                     used[j] = true;
                 }
@@ -3273,7 +3264,7 @@ impl App {
             }
             let mut group_files = vec![(
                 hashes[i].0.clone(),
-                fs::metadata(&hashes[i].0).map(|m| m.len()).unwrap_or(0),
+                fs::metadata(&hashes[i].0).map_or(0, |m| m.len()),
             )];
             used[i] = true;
 
@@ -3291,7 +3282,7 @@ impl App {
                     if !already_grouped {
                         group_files.push((
                             hashes[j].0.clone(),
-                            fs::metadata(&hashes[j].0).map(|m| m.len()).unwrap_or(0),
+                            fs::metadata(&hashes[j].0).map_or(0, |m| m.len()),
                         ));
                         used[j] = true;
                     }
@@ -3365,8 +3356,8 @@ fn run_full_process(
 
         if !dry_run {
             if let Err(e) = fs::create_dir_all(&config.dest) {
-                log(format!("  Error creating destination: {}", e));
-                add_error(format!("Step 1: {}", e));
+                log(format!("  Error creating destination: {e}"));
+                add_error(format!("Step 1: {e}"));
                 return;
             }
         }
@@ -3384,7 +3375,9 @@ fn run_full_process(
             for (i, entry) in files.iter().enumerate() {
                 set_detail(format!("Twitter: {}/{}", i + 1, total));
                 set_step_prog(0, (i + 1) as f64 / total as f64);
-                if !dry_run {
+                if dry_run {
+                    sources_moved += 1;
+                } else {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
                         add_undo(
@@ -3393,8 +3386,6 @@ fn run_full_process(
                         );
                         sources_moved += 1;
                     }
-                } else {
-                    sources_moved += 1;
                 }
             }
             log(format!(
@@ -3428,7 +3419,7 @@ fn run_full_process(
                                 config
                                     .image_extensions
                                     .iter()
-                                    .any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
+                                    .any(|ie| ie.eq_ignore_ascii_case(&format!(".{ext}")))
                             }
                         })
                         .collect::<Vec<_>>()
@@ -3444,7 +3435,9 @@ fn run_full_process(
                         let dur = modified.elapsed().unwrap_or_default();
                         let ts = Utc::now().timestamp() - dur.as_secs() as i64;
                         if ts >= cutoff {
-                            if !dry_run {
+                            if dry_run {
+                                dl_moved += 1;
+                            } else {
                                 let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                                 if fs::rename(entry.path(), &dest_path).is_ok() {
                                     add_undo(
@@ -3453,8 +3446,6 @@ fn run_full_process(
                                     );
                                     dl_moved += 1;
                                 }
-                            } else {
-                                dl_moved += 1;
                             }
                         }
                     }
@@ -3477,7 +3468,9 @@ fn run_full_process(
                 .unwrap_or_default();
             let mut x_moved = 0usize;
             for entry in &files {
-                if !dry_run {
+                if dry_run {
+                    x_moved += 1;
+                } else {
                     let dest_path = PathBuf::from(&config.dest).join(entry.file_name());
                     if fs::rename(entry.path(), &dest_path).is_ok() {
                         add_undo(
@@ -3486,8 +3479,6 @@ fn run_full_process(
                         );
                         x_moved += 1;
                     }
-                } else {
-                    x_moved += 1;
                 }
             }
             if !dry_run {
@@ -3519,8 +3510,7 @@ fn run_full_process(
         }
         step_num += 1;
         set_step(format!(
-            "STEP {}/{}: Removing duplicates...",
-            step_num, total_steps
+            "STEP {step_num}/{total_steps}: Removing duplicates..."
         ));
         set_prog(0.2);
         set_step_prog(1, 0.0);
@@ -3534,8 +3524,7 @@ fn run_full_process(
 
         // Parallel hash computation using rayon
         set_detail(format!(
-            "Computing hashes for {} files (parallel)...",
-            total
+            "Computing hashes for {total} files (parallel)..."
         ));
         let hashes: Vec<(PathBuf, Option<String>)> = files
             .par_iter()
@@ -3556,12 +3545,10 @@ fn run_full_process(
             match hash_opt {
                 Some(hash) => {
                     if !seen_hashes.insert(hash.clone()) {
-                        if !dry_run {
-                            if let Err(e) = fs::remove_file(path) {
-                                add_error(format!("Step 2 remove {}: {}", path.display(), e));
-                            } else {
-                                removed += 1;
-                            }
+                        if dry_run {
+                            removed += 1;
+                        } else if let Err(e) = fs::remove_file(path) {
+                            add_error(format!("Step 2 remove {}: {}", path.display(), e));
                         } else {
                             removed += 1;
                         }
@@ -3589,8 +3576,7 @@ fn run_full_process(
         }
         step_num += 1;
         set_step(format!(
-            "STEP {}/{}: Removing reference duplicates...",
-            step_num, total_steps
+            "STEP {step_num}/{total_steps}: Removing reference duplicates..."
         ));
         set_prog(0.4);
         set_step_prog(2, 0.0);
@@ -3600,15 +3586,14 @@ fn run_full_process(
         let ref_hashes: HashSet<String> = if ref_path.exists() {
             let ref_files: Vec<_> = WalkDir::new(&ref_path)
                 .into_iter()
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.path().is_file())
                 .collect();
             let ref_total = ref_files.len();
 
             // Parallel hash computation for reference files
             set_detail(format!(
-                "Building ref DB: {} files (parallel)...",
-                ref_total
+                "Building ref DB: {ref_total} files (parallel)..."
             ));
             let ref_hashes_vec: Vec<String> = ref_files
                 .par_iter()
@@ -3634,12 +3619,10 @@ fn run_full_process(
             set_step_prog(2, 0.5 + (i + 1) as f64 / dest_total as f64 * 0.5);
             if let Ok(hash) = calculate_sha256(&path) {
                 if ref_hashes.contains(&hash) {
-                    if !dry_run {
-                        if let Err(e) = fs::remove_file(&path) {
-                            add_error(format!("Step 3 remove {}: {}", path.display(), e));
-                        } else {
-                            removed += 1;
-                        }
+                    if dry_run {
+                        removed += 1;
+                    } else if let Err(e) = fs::remove_file(&path) {
+                        add_error(format!("Step 3 remove {}: {}", path.display(), e));
                     } else {
                         removed += 1;
                     }
@@ -3663,8 +3646,7 @@ fn run_full_process(
         }
         step_num += 1;
         set_step(format!(
-            "STEP {}/{}: Renaming files...",
-            step_num, total_steps
+            "STEP {step_num}/{total_steps}: Renaming files..."
         ));
         set_prog(0.6);
         set_step_prog(3, 0.0);
@@ -3685,7 +3667,7 @@ fn run_full_process(
                             config
                                 .image_extensions
                                 .iter()
-                                .any(|ie| ie.eq_ignore_ascii_case(&format!(".{}", ext)))
+                                .any(|ie| ie.eq_ignore_ascii_case(&format!(".{ext}")))
                         }
                     })
                     .collect()
@@ -3709,18 +3691,16 @@ fn run_full_process(
                 if let Ok(modified) = meta.modified() {
                     let datetime: chrono::DateTime<chrono::Local> = modified.into();
                     let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
-                    let new_name = format!("{}.{}", timestamp, ext);
+                    let new_name = format!("{timestamp}.{ext}");
                     if let Ok(final_name) = get_unique_filename(&path, &new_name) {
                         let new_path = safe_parent(&path).join(&final_name);
-                        if !dry_run {
-                            if fs::rename(&path, &new_path).is_ok() {
-                                add_undo(
-                                    path.to_string_lossy().to_string(),
-                                    new_path.to_string_lossy().to_string(),
-                                );
-                                renamed += 1;
-                            }
-                        } else {
+                        if dry_run {
+                            renamed += 1;
+                        } else if fs::rename(&path, &new_path).is_ok() {
+                            add_undo(
+                                path.to_string_lossy().to_string(),
+                                new_path.to_string_lossy().to_string(),
+                            );
                             renamed += 1;
                         }
                     }
@@ -3755,16 +3735,16 @@ fn run_full_process(
         }
         set_detail("Resizing images...".into());
         log("[RESIZE] Resizing images...".into());
-        if !dry_run {
+        if dry_run {
+            log("  ✓ Resize skipped (dry run)".into());
+        } else {
             let resized = resize_images(
                 &config.dest,
                 config.resize_max_width,
                 config.resize_max_height,
                 &log,
             );
-            log(format!("  ✓ Resized {} images", resized));
-        } else {
-            log("  ✓ Resize skipped (dry run)".into());
+            log(format!("  ✓ Resized {resized} images"));
         }
     }
 
@@ -3776,11 +3756,11 @@ fn run_full_process(
         }
         set_detail("Adding watermark...".into());
         log("[WATERMARK] Adding watermark overlay...".into());
-        if !dry_run {
-            let marked = add_watermark(&config.dest, &config.watermark_text, &log);
-            log(format!("  ✓ Watermarked {} images", marked));
-        } else {
+        if dry_run {
             log("  ✓ Watermark skipped (dry run)".into());
+        } else {
+            let marked = add_watermark(&config.dest, &config.watermark_text, &log);
+            log(format!("  ✓ Watermarked {marked} images"));
         }
     }
 
@@ -3792,23 +3772,22 @@ fn run_full_process(
         }
         step_num += 1;
         set_step(format!(
-            "STEP {}/{}: Converting to JXL...",
-            step_num, total_steps
+            "STEP {step_num}/{total_steps}: Converting to JXL..."
         ));
         set_prog(0.8);
         set_step_prog(4, 0.0);
         set_detail("Running JXL conversion...".into());
         log("[STEP 5] Converting images to JXL...".into());
-        if !dry_run {
+        if dry_run {
+            log("  ✓ JXL conversion skipped (dry run)".into());
+        } else {
             match convert_to_jxl(&config.dest) {
                 Ok(()) => log("  ✓ JXL conversion completed".into()),
                 Err(e) => {
-                    log(format!("  Error: {}", e));
-                    add_error(format!("Step 5: {}", e));
+                    log(format!("  Error: {e}"));
+                    add_error(format!("Step 5: {e}"));
                 }
             }
-        } else {
-            log("  ✓ JXL conversion skipped (dry run)".into());
         }
         set_step_prog(4, 1.0);
     }
@@ -3837,22 +3816,22 @@ fn clean_filenames(dest: &str, dry_run: bool, add_error: &dyn Fn(String)) -> usi
         let ext = safe_extension(&path);
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
-            format!("{}.{}", file_stem.replace("_", ""), ext)
+            format!("{}.{}", file_stem.replace('_', ""), ext)
         } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-            format!("{}.{}", cleaned, ext)
+            format!("{cleaned}.{ext}")
         } else {
             continue;
         };
 
         if let Ok(final_name) = get_unique_filename(&path, &new_name) {
             let new_path = safe_parent(&path).join(&final_name);
-            if !dry_run {
+            if dry_run {
+                count += 1;
+            } else {
                 match fs::rename(&path, &new_path) {
                     Ok(()) => count += 1,
                     Err(e) => add_error(format!("{}: {}", path.display(), e)),
                 }
-            } else {
-                count += 1;
             }
         }
     }
@@ -3869,7 +3848,7 @@ fn run_with_progress(
     inc_files: &dyn Fn(usize),
 ) -> anyhow::Result<usize> {
     let files: Vec<_> = fs::read_dir(dest)?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_file())
         .collect();
     let total = files.len();
@@ -3886,28 +3865,26 @@ fn run_with_progress(
         let new_name = match mode {
             "rename" => {
                 if is_digit_underscore_digit(&file_stem) {
-                    Some(format!("{}.{}", file_stem.replace("_", ""), ext))
+                    Some(format!("{}.{}", file_stem.replace('_', ""), ext))
                 } else {
                     remove_trailing_parentheses(&file_stem)
-                        .map(|cleaned| format!("{}.{}", cleaned, ext))
+                        .map(|cleaned| format!("{cleaned}.{ext}"))
                 }
             }
             "timestamp" => {
                 let file_name = safe_file_name(&path);
                 if file_name.starts_with(|c: char| c.is_numeric()) && file_name.len() > 14 {
                     None
-                } else {
-                    if let Ok(meta) = fs::metadata(&path) {
-                        if let Ok(modified) = meta.modified() {
-                            let datetime: chrono::DateTime<chrono::Local> = modified.into();
-                            let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
-                            Some(format!("{}.{}", timestamp, ext))
-                        } else {
-                            None
-                        }
+                } else if let Ok(meta) = fs::metadata(&path) {
+                    if let Ok(modified) = meta.modified() {
+                        let datetime: chrono::DateTime<chrono::Local> = modified.into();
+                        let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
+                        Some(format!("{timestamp}.{ext}"))
                     } else {
                         None
                     }
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -3916,7 +3893,9 @@ fn run_with_progress(
         if let Some(new) = new_name {
             if let Ok(final_name) = get_unique_filename(&path, &new) {
                 let new_path = safe_parent(&path).join(&final_name);
-                if !dry_run {
+                if dry_run {
+                    count += 1;
+                } else {
                     match fs::rename(&path, &new_path) {
                         Ok(()) => {
                             count += 1;
@@ -3924,8 +3903,6 @@ fn run_with_progress(
                         }
                         Err(e) => add_error(format!("{}: {}", path.display(), e)),
                     }
-                } else {
-                    count += 1;
                 }
             }
         }
@@ -3957,11 +3934,11 @@ fn show_cli_menu() {
     let _ = io::stdin().read_line(&mut input);
     let choice: u32 = input.trim().parse().unwrap_or(0);
 
-    let log = |msg: String| println!("{}", msg);
+    let log = |msg: String| println!("{msg}");
     let set_prog = |v: f64| println!("  Progress: {:.0}%", v * 100.0);
-    let set_detail = |s: String| println!("    {}", s);
-    let set_step = |s: String| println!("  >> {}", s);
-    let add_error = |e: String| eprintln!("  ERROR: {}", e);
+    let set_detail = |s: String| println!("    {s}");
+    let set_step = |s: String| println!("  >> {s}");
+    let add_error = |e: String| eprintln!("  ERROR: {e}");
     let set_step_prog = |_: usize, _: f64| {};
     let inc_files = |_: usize| {};
     let step_enabled = vec![true; 5];
@@ -4053,8 +4030,8 @@ fn main() -> Result<()> {
     terminal.show_cursor().ok();
 
     if let Err(err) = result {
-        error!("Application error: {}", err);
-        eprintln!("Error: {}", err);
+        error!("Application error: {err}");
+        eprintln!("Error: {err}");
     }
 
     info!("pixpipe exiting");
@@ -4135,11 +4112,11 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                     // Feature #14: Help screen
                     if app.state == AppState::Help {
                         match key.code {
-                            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
-                                app.state = AppState::Menu
+                            KeyCode::Esc | KeyCode::Char('?' | 'q') => {
+                                app.state = AppState::Menu;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
-                                app.help_scroll = app.help_scroll.saturating_sub(1)
+                                app.help_scroll = app.help_scroll.saturating_sub(1);
                             }
                             KeyCode::Down | KeyCode::Char('j') => {
                                 if app.help_scroll < 30 {
@@ -4245,12 +4222,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 if let Err(e) = app.export_log() {
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Export failed: {}", e));
+                                        logs.push(format!("Export failed: {e}"));
                                     }
-                                } else {
-                                    if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push("Log exported successfully".into());
-                                    }
+                                } else if let Ok(mut logs) = app.logs.lock() {
+                                    logs.push("Log exported successfully".into());
                                 }
                                 continue;
                             }
@@ -4449,7 +4424,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                         MenuItem::Presets => app.state = AppState::Presets,
                                         MenuItem::Scheduler => app.state = AppState::Scheduler,
                                         MenuItem::HistoryExport => {
-                                            app.state = AppState::HistoryExport
+                                            app.state = AppState::HistoryExport;
                                         }
                                         MenuItem::ThemeEditor => {
                                             app.load_custom_themes();
@@ -4460,7 +4435,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                             app.state = AppState::CompressionGraph;
                                         }
                                         MenuItem::FileClassify => {
-                                            app.state = AppState::FileClassify
+                                            app.state = AppState::FileClassify;
                                         }
                                         MenuItem::MetaEdit => {
                                             app.load_meta_files();
@@ -4570,7 +4545,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             }
                             KeyCode::Char('a') => {
                                 let all_on = app.step_enabled.iter().all(|&e| e);
-                                for e in app.step_enabled.iter_mut() {
+                                for e in &mut app.step_enabled {
                                     *e = !all_on;
                                 }
                             }
@@ -4600,7 +4575,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             }
                             KeyCode::Home => app.preview_scroll = 0,
                             KeyCode::End => {
-                                app.preview_scroll = app.preview_items.len().saturating_sub(1)
+                                app.preview_scroll = app.preview_items.len().saturating_sub(1);
                             }
                             KeyCode::Enter => {
                                 app.start_processing();
@@ -4796,7 +4771,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                         AppState::Stats => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => app.state = AppState::Menu,
                             KeyCode::Up | KeyCode::Char('k') => {
-                                app.stats_scroll = app.stats_scroll.saturating_sub(1)
+                                app.stats_scroll = app.stats_scroll.saturating_sub(1);
                             }
                             KeyCode::Down | KeyCode::Char('j') if app.stats_scroll < 20 => {
                                 app.stats_scroll += 1;
@@ -5019,8 +4994,8 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                         },
                         // Feature #11: Info Panel
                         AppState::InfoPanel => match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => {
-                                app.state = AppState::Preview
+                            KeyCode::Char('q' | 'i') | KeyCode::Esc => {
+                                app.state = AppState::Preview;
                             }
                             KeyCode::Up | KeyCode::Char('k') => {
                                 if app.info_selected > 0 {
@@ -5207,13 +5182,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 match result {
                                     Ok(path) => {
                                         if let Ok(mut logs) = app.logs.lock() {
-                                            logs.push(format!("Exported to: {}", path));
+                                            logs.push(format!("Exported to: {path}"));
                                         }
                                         app.state = AppState::Menu;
                                     }
                                     Err(e) => {
                                         if let Ok(mut logs) = app.logs.lock() {
-                                            logs.push(format!("Export failed: {}", e));
+                                            logs.push(format!("Export failed: {e}"));
                                         }
                                     }
                                 }
@@ -5265,15 +5240,15 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             }
                             KeyCode::Char(' ') => match app.dashboard_selected {
                                 0 => {
-                                    app.widget_layout.show_summary = !app.widget_layout.show_summary
+                                    app.widget_layout.show_summary = !app.widget_layout.show_summary;
                                 }
                                 1 => app.widget_layout.show_chart = !app.widget_layout.show_chart,
                                 2 => {
-                                    app.widget_layout.show_history = !app.widget_layout.show_history
+                                    app.widget_layout.show_history = !app.widget_layout.show_history;
                                 }
                                 3 => {
                                     app.widget_layout.show_compression =
-                                        !app.widget_layout.show_compression
+                                        !app.widget_layout.show_compression;
                                 }
                                 _ => {}
                             },
@@ -5371,7 +5346,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 }
                             }
                             KeyCode::Char('a') => {
-                                for (_, selected) in app.meta_files.iter_mut() {
+                                for (_, selected) in &mut app.meta_files {
                                     *selected = true;
                                 }
                             }
@@ -5382,7 +5357,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                 let count = app.meta_files.iter().filter(|(_, s)| *s).count();
                                 app.meta_files.retain(|(_, s)| !s);
                                 if let Ok(mut logs) = app.logs.lock() {
-                                    logs.push(format!("Removed metadata from {} files", count));
+                                    logs.push(format!("Removed metadata from {count} files"));
                                 }
                             }
                             _ => {}
@@ -5402,12 +5377,12 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Char('e') => match app.export_config() {
                                 Ok(path) => {
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Config exported to: {}", path));
+                                        logs.push(format!("Config exported to: {path}"));
                                     }
                                 }
                                 Err(e) => {
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Export failed: {}", e));
+                                        logs.push(format!("Export failed: {e}"));
                                     }
                                 }
                             },
@@ -5425,7 +5400,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                     }
                                     Err(e) => {
                                         if let Ok(mut logs) = app.logs.lock() {
-                                            logs.push(format!("Import failed: {}", e));
+                                            logs.push(format!("Import failed: {e}"));
                                         }
                                     }
                                 }
@@ -5464,7 +5439,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                     .spawn()
                                 {
                                     if let Ok(mut logs) = app.logs.lock() {
-                                        logs.push(format!("Failed to open: {}", e));
+                                        logs.push(format!("Failed to open: {e}"));
                                     }
                                 }
                             }
@@ -5551,7 +5526,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                         let item = menu_items[*idx];
                                         match item {
                                             MenuItem::FullProcess => {
-                                                app.state = AppState::StepSelect
+                                                app.state = AppState::StepSelect;
                                             }
                                             MenuItem::Settings => app.state = AppState::Settings,
                                             MenuItem::Statistics => app.state = AppState::Stats,
@@ -5753,14 +5728,14 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                             KeyCode::Enter => match app.export_report() {
                                 Ok(path) => {
                                     app.add_notification(
-                                        format!("Report exported to {}", path),
+                                        format!("Report exported to {path}"),
                                         "success".into(),
                                     );
                                     app.state = AppState::Menu;
                                 }
                                 Err(e) => {
                                     app.add_notification(
-                                        format!("Export failed: {}", e),
+                                        format!("Export failed: {e}"),
                                         "error".into(),
                                     );
                                 }
@@ -5796,7 +5771,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                                     }
                                 }
                             }
-                            KeyCode::Char('+') | KeyCode::Char('=') => {
+                            KeyCode::Char('+' | '=') => {
                                 if app.similar_threshold < 64 {
                                     app.similar_threshold += 1;
                                 }
@@ -6086,7 +6061,7 @@ fn notify_done(success: bool) {
         .args([
             "-NoProfile", "-Command",
             &format!(
-                r#"Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::{}; $n.Visible = $true; $n.ShowBalloonTip(5000, 'io-tool', '{}', [System.Windows.Forms.ToolTipIcon]::{})"#,
+                r"Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::{}; $n.Visible = $true; $n.ShowBalloonTip(5000, 'io-tool', '{}', [System.Windows.Forms.ToolTipIcon]::{})",
                 if success { "Information" } else { "Warning" },
                 if success { "Processing completed successfully!" } else { "Processing completed with errors." },
                 if success { "Info" } else { "Warning" }
@@ -6137,7 +6112,7 @@ fn ui(f: &mut Frame, app: &mut App) {
             } else {
                 ""
             };
-            format!("  {} Processing...{}", sp, pause)
+            format!("  {sp} Processing...{pause}")
         }
         AppState::Done => "  Completed".to_string(),
         AppState::Settings => "  Settings".to_string(),
@@ -6363,7 +6338,7 @@ fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let elapsed = app.splash_start.elapsed();
     let remaining = if elapsed < app.splash_duration {
-        app.splash_duration - elapsed
+        app.splash_duration.checked_sub(elapsed).unwrap()
     } else {
         Duration::ZERO
     };
@@ -6400,7 +6375,7 @@ fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
     if remaining > Duration::ZERO {
         let secs = remaining.as_secs_f64().ceil() as u64;
         lines.push(Line::from(Span::styled(
-            format!("Starting in {}s...", secs),
+            format!("Starting in {secs}s..."),
             Style::default().fg(theme.muted),
         )));
     } else {
@@ -6562,7 +6537,7 @@ fn render_step_select(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(theme.muted)
             };
             ListItem::new(Line::from(vec![Span::styled(
-                format!("{}{} {}", prefix, check, label),
+                format!("{prefix}{check} {label}"),
                 style,
             )]))
         })
@@ -6688,7 +6663,7 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
                     "  "
                 };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("  {} ", icon), Style::default().fg(theme.accent)),
+                    Span::styled(format!("  {icon} "), Style::default().fg(theme.accent)),
                     Span::styled(
                         format!("{:<40}", truncate_str(old, 40)),
                         Style::default().fg(theme.error),
@@ -6728,7 +6703,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let sp = SPINNER_CHARS[app.spinner_idx];
     let step = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled(format!("{} ", sp), Style::default().fg(theme.warning)),
+            Span::styled(format!("{sp} "), Style::default().fg(theme.warning)),
             Span::styled(step_text, Style::default().fg(theme.fg)),
         ]),
         render_status_badge("processing", &theme),
@@ -6783,7 +6758,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
                 theme.muted
             };
             Span::styled(
-                format!(" {}[{}] ", label, mini_bar),
+                format!(" {label}[{mini_bar}] "),
                 Style::default().fg(color),
             )
         })
@@ -6809,7 +6784,7 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let detail_text = safe_lock(&app.progress_detail).clone();
-    let speed_str = format!("{:.1} files/s", speed);
+    let speed_str = format!("{speed:.1} files/s");
     let eta_str = format_duration(remaining);
     let elapsed_str = format_duration(elapsed);
 
@@ -6889,7 +6864,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  {}", stats_text),
+            format!("  {stats_text}"),
             Style::default().fg(theme.muted),
         )),
     ];
@@ -6904,7 +6879,7 @@ fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
             .iter()
             .map(|e| {
                 ListItem::new(Line::from(Span::styled(
-                    format!("  ✗ {}", e),
+                    format!("  ✗ {e}"),
                     Style::default().fg(theme.error),
                 )))
             })
@@ -6957,9 +6932,9 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             let text = if value.is_empty() {
-                format!("{}{}", prefix, label)
+                format!("{prefix}{label}")
             } else {
-                format!("{}{}: {}", prefix, label, value)
+                format!("{prefix}{label}: {value}")
             };
             ListItem::new(Line::from(Span::styled(text, style)))
         })
@@ -7429,7 +7404,16 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Bar chart of recent runs
     let stats_data = app.get_stats_data();
-    if !stats_data.is_empty() {
+    if stats_data.is_empty() {
+        let empty = Paragraph::new("  No history yet")
+            .style(Style::default().fg(theme.muted))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files per Run"),
+            );
+        f.render_widget(empty, chunks[1]);
+    } else {
         let max_val = stats_data.iter().map(|(_, v)| *v).max().unwrap_or(1);
         let bar_data: Vec<(&str, u64)> = stats_data
             .iter()
@@ -7448,15 +7432,6 @@ fn render_stats(f: &mut Frame, app: &mut App, area: Rect) {
             .value_style(Style::default().fg(Color::White))
             .max(max_val);
         f.render_widget(barchart, chunks[1]);
-    } else {
-        let empty = Paragraph::new("  No history yet")
-            .style(Style::default().fg(theme.muted))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Files per Run"),
-            );
-        f.render_widget(empty, chunks[1]);
     }
 
     // History list
@@ -7558,7 +7533,7 @@ fn render_profiles(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(theme.muted)
         };
         items.push(ListItem::new(Line::from(Span::styled(
-            format!("{}  {}", prefix, action),
+            format!("{prefix}  {action}"),
             style,
         ))));
     }
@@ -7619,12 +7594,12 @@ fn render_jxl_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             let text = if value.is_empty() {
-                format!("{}{}", prefix, label)
+                format!("{prefix}{label}")
             } else if *label == "Quality" {
-                let bar = make_gauge_bar(app.config.jxl_quality as f64 / 100.0, 20);
-                format!("{}{}: {} [{}]", prefix, label, value, bar)
+                let bar = make_gauge_bar(f64::from(app.config.jxl_quality) / 100.0, 20);
+                format!("{prefix}{label}: {value} [{bar}]")
             } else {
-                format!("{}{}: {}", prefix, label, value)
+                format!("{prefix}{label}: {value}")
             };
             ListItem::new(Line::from(Span::styled(text, style)))
         })
@@ -7758,7 +7733,7 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
         ("Min Size (KB)", format!("{}", app.filter.min_size_kb)),
         ("Max Size (KB)", format!("{}", app.filter.max_size_kb)),
         ("Name Pattern", app.filter.name_pattern.clone()),
-        ("Sort By", format!("{} {}", sort_name, sort_dir)),
+        ("Sort By", format!("{sort_name} {sort_dir}")),
         ("Apply & Back", String::new()),
     ];
 
@@ -7780,9 +7755,9 @@ fn render_filter_sort(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             let text = if value.is_empty() {
-                format!("{}{}", prefix, label)
+                format!("{prefix}{label}")
             } else {
-                format!("{}{}: {}", prefix, label, value)
+                format!("{prefix}{label}: {value}")
             };
             ListItem::new(Line::from(Span::styled(text, style)))
         })
@@ -7836,7 +7811,7 @@ fn render_info_panel(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}{}", prefix, old),
+                format!("{prefix}{old}"),
                 style,
             )))
         })
@@ -7856,7 +7831,7 @@ fn render_info_panel(f: &mut Frame, app: &mut App, area: Rect) {
             .map(|(key, value)| {
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("  {}: ", key),
+                        format!("  {key}: "),
                         Style::default()
                             .fg(theme.primary)
                             .add_modifier(Modifier::BOLD),
@@ -7894,7 +7869,7 @@ fn render_confirm_dialog(f: &mut Frame, app: &mut App, area: Rect) {
     let dialog_lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("  {}", action_text),
+            format!("  {action_text}"),
             Style::default()
                 .fg(theme.warning)
                 .add_modifier(Modifier::BOLD),
@@ -7913,13 +7888,13 @@ fn render_confirm_dialog(f: &mut Frame, app: &mut App, area: Rect) {
             ),
             Span::raw("    "),
             Span::styled(
-                format!("{} No", if !app.confirm_yes { "▶" } else { " " }),
-                if !app.confirm_yes {
+                format!("{} No", if app.confirm_yes { " " } else { "▶" }),
+                if app.confirm_yes {
+                    Style::default().fg(Color::White)
+                } else {
                     Style::default()
                         .fg(theme.error)
                         .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
                 },
             ),
         ]),
@@ -8172,7 +8147,7 @@ fn render_scheduler(f: &mut Frame, app: &mut App, area: Rect) {
                 .collect();
             ListItem::new(Line::from(vec![
                 Span::styled(
-                    format!("{}  {} ", prefix, status),
+                    format!("{prefix}  {status} "),
                     Style::default().fg(status_color),
                 ),
                 Span::styled(
@@ -8219,7 +8194,7 @@ fn render_history_export(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}  {}", prefix, fmt),
+                format!("{prefix}  {fmt}"),
                 style,
             )))
         })
@@ -8273,7 +8248,7 @@ fn render_theme_editor(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             let rgb = match color {
-                Color::Rgb(r, g, b) => format!("({},{},{})", r, g, b),
+                Color::Rgb(r, g, b) => format!("({r},{g},{b})"),
                 Color::Red => "(255,0,0)".to_string(),
                 Color::Green => "(0,255,0)".to_string(),
                 Color::Blue => "(0,0,255)".to_string(),
@@ -8290,12 +8265,12 @@ fn render_theme_editor(f: &mut Frame, app: &mut App, area: Rect) {
                 Color::LightYellow => "(255,255,128)".to_string(),
                 Color::LightCyan => "(128,255,255)".to_string(),
                 Color::LightMagenta => "(255,128,255)".to_string(),
-                Color::Indexed(i) => format!("idx:{}", i),
+                Color::Indexed(i) => format!("idx:{i}"),
                 _ => "(?,?,?)".to_string(),
             };
             let _sample = Block::default().style(Style::default().fg(*color));
             ListItem::new(Line::from(vec![Span::styled(
-                format!("{}  {:<12} {} ", prefix, name, rgb),
+                format!("{prefix}  {name:<12} {rgb} "),
                 style,
             )]))
         })
@@ -8341,7 +8316,7 @@ fn render_dashboard_custom(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{}  {} ", prefix, name), style),
+                Span::styled(format!("{prefix}  {name} "), style),
                 Span::styled(status, Style::default().fg(status_color)),
             ]))
         })
@@ -8365,7 +8340,16 @@ fn render_compression_graph(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     // Bar chart
-    if !app.compression_stats.is_empty() {
+    if app.compression_stats.is_empty() {
+        let empty = Paragraph::new("  No data. Run Size Comparison first.")
+            .style(Style::default().fg(theme.muted))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Files by Format"),
+            );
+        f.render_widget(empty, chunks[0]);
+    } else {
         let max_count = app
             .compression_stats
             .iter()
@@ -8390,15 +8374,6 @@ fn render_compression_graph(f: &mut Frame, app: &mut App, area: Rect) {
             .value_style(Style::default().fg(Color::White))
             .max(max_count);
         f.render_widget(barchart, chunks[0]);
-    } else {
-        let empty = Paragraph::new("  No data. Run Size Comparison first.")
-            .style(Style::default().fg(theme.muted))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Files by Format"),
-            );
-        f.render_widget(empty, chunks[0]);
     }
 
     // Detail list
@@ -8431,7 +8406,7 @@ fn render_compression_graph(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White),
             ),
             Span::styled(
-                format!("↓{:.1}% ", ratio),
+                format!("↓{ratio:.1}% "),
                 if ratio > 50.0 {
                     Style::default().fg(theme.success)
                 } else {
@@ -8482,7 +8457,7 @@ fn render_file_classify(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}  \"{}\" → {}/", prefix, pattern, folder),
+                format!("{prefix}  \"{pattern}\" → {folder}/"),
                 style,
             )))
         })
@@ -8569,7 +8544,7 @@ fn render_meta_edit(f: &mut Frame, app: &mut App, area: Rect) {
         .enumerate()
         .map(|(i, f)| {
             if i == app.meta_field {
-                format!("[{}]", f)
+                format!("[{f}]")
             } else {
                 f.to_string()
             }
@@ -8611,7 +8586,7 @@ fn render_config_io(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(Span::styled(
-                format!("{}  {}", prefix, opt),
+                format!("{prefix}  {opt}"),
                 style,
             )))
         })
@@ -8682,7 +8657,7 @@ fn render_plugins(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("{}  {} ", prefix, status),
+                        format!("{prefix}  {status} "),
                         Style::default().fg(status_color),
                     ),
                     Span::styled(format!("{} - {}", plugin.name, plugin.description), style),
@@ -8725,8 +8700,8 @@ fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(Color::White)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{}  {} ", prefix, name), style),
-                Span::styled(format!("[{}]", status), Style::default().fg(status_color)),
+                Span::styled(format!("{prefix}  {name} "), style),
+                Span::styled(format!("[{status}]"), Style::default().fg(status_color)),
             ]))
         })
         .collect();
@@ -8746,12 +8721,11 @@ fn render_statusbar_custom(f: &mut Frame, app: &mut App, area: Rect) {
 fn is_image_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| {
+        .is_some_and(|ext| {
             DEFAULT_IMAGE_EXTENSIONS
                 .iter()
-                .any(|e| e.eq_ignore_ascii_case(&format!(".{}", ext)))
+                .any(|e| e.eq_ignore_ascii_case(&format!(".{ext}")))
         })
-        .unwrap_or(false)
 }
 
 fn calculate_sha256(path: &PathBuf) -> anyhow::Result<String> {
@@ -8815,7 +8789,7 @@ fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
         if let Some(lon_field) = exif.get_field(exif::Tag::GPSLongitude, exif::In::PRIMARY) {
             let lat = lat_field.display_value().to_string();
             let lon = lon_field.display_value().to_string();
-            entries.push(("GPS".to_string(), format!("{}, {}", lat, lon)));
+            entries.push(("GPS".to_string(), format!("{lat}, {lon}")));
         }
     }
 
@@ -8837,10 +8811,10 @@ fn calculate_ahash(path: &PathBuf) -> anyhow::Result<u64> {
         .resize_exact(8, 8, image::imageops::FilterType::Lanczos3)
         .to_luma8();
     let pixels: Vec<u8> = gray.pixels().map(|p| p[0]).collect();
-    let mean: u64 = pixels.iter().map(|&p| p as u64).sum::<u64>() / 64;
+    let mean: u64 = pixels.iter().map(|&p| u64::from(p)).sum::<u64>() / 64;
     let mut hash: u64 = 0;
     for (i, &pixel) in pixels.iter().enumerate() {
-        if pixel as u64 >= mean {
+        if u64::from(pixel) >= mean {
             hash |= 1 << (63 - i);
         }
     }
@@ -8873,7 +8847,7 @@ fn hamming_distance(a: u64, b: u64) -> u32 {
 
 fn rename_by_timestamp(dest: &str) -> anyhow::Result<()> {
     let entries: Vec<_> = fs::read_dir(dest)?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_file() && is_image_file(&e.path()))
         .collect();
 
@@ -8891,7 +8865,7 @@ fn rename_by_timestamp(dest: &str) -> anyhow::Result<()> {
         let datetime: chrono::DateTime<chrono::Local> = modified.into();
         let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
 
-        let new_name = format!("{}.{}", timestamp, ext);
+        let new_name = format!("{timestamp}.{ext}");
         let final_name = get_unique_filename(&path, &new_name)?;
 
         let new_path = safe_parent(&path).join(&final_name);
@@ -8915,9 +8889,9 @@ fn get_unique_filename(path: &Path, name: &str) -> anyhow::Result<String> {
 
     for i in 0..10 {
         let candidate = if ext.is_empty() {
-            format!("{}{}", stem, i)
+            format!("{stem}{i}")
         } else {
-            format!("{}.{}{}", stem, i, ext)
+            format!("{stem}.{i}{ext}")
         };
         let candidate_path = safe_parent(path).join(&candidate);
         if !candidate_path.exists() {
@@ -8930,7 +8904,7 @@ fn get_unique_filename(path: &Path, name: &str) -> anyhow::Result<String> {
 
 fn rename_remove_underscore_parens(dest: &str) -> anyhow::Result<()> {
     let entries: Vec<_> = fs::read_dir(dest)?
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
         .filter(|e| e.path().is_file() && is_image_file(&e.path()))
         .collect();
 
@@ -8940,9 +8914,9 @@ fn rename_remove_underscore_parens(dest: &str) -> anyhow::Result<()> {
         let ext = safe_extension(&path);
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
-            format!("{}.{}", file_stem.replace("_", ""), ext)
+            format!("{}.{}", file_stem.replace('_', ""), ext)
         } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-            format!("{}.{}", cleaned, ext)
+            format!("{cleaned}.{ext}")
         } else {
             continue;
         };
@@ -9021,9 +8995,9 @@ fn resize_images(dest: &str, max_w: u32, max_h: u32, log: &dyn Fn(String)) -> us
         if let Ok(img) = image::open(&path) {
             let (w, h) = img.dimensions();
             if w > max_w || h > max_h {
-                let ratio = (max_w as f64 / w as f64).min(max_h as f64 / h as f64);
-                let new_w = (w as f64 * ratio) as u32;
-                let new_h = (h as f64 * ratio) as u32;
+                let ratio = (f64::from(max_w) / f64::from(w)).min(f64::from(max_h) / f64::from(h));
+                let new_w = (f64::from(w) * ratio) as u32;
+                let new_h = (f64::from(h) * ratio) as u32;
                 let resized = img.resize_exact(new_w, new_h, image::imageops::FilterType::Lanczos3);
                 if let Err(e) = resized.save(&path) {
                     log(format!("  Resize error {}: {}", path.display(), e));
@@ -9085,10 +9059,10 @@ fn add_watermark(dest: &str, _text: &str, log: &dyn Fn(String)) -> usize {
                 for x in 0..w {
                     let pixel = rgba.get_pixel_mut(x, y);
                     // Alpha blend
-                    let alpha = wm_color[3] as f64 / 255.0;
-                    pixel[0] = (pixel[0] as f64 * (1.0 - alpha) + wm_color[0] as f64 * alpha) as u8;
-                    pixel[1] = (pixel[1] as f64 * (1.0 - alpha) + wm_color[1] as f64 * alpha) as u8;
-                    pixel[2] = (pixel[2] as f64 * (1.0 - alpha) + wm_color[2] as f64 * alpha) as u8;
+                    let alpha = f64::from(wm_color[3]) / 255.0;
+                    pixel[0] = (f64::from(pixel[0]) * (1.0 - alpha) + f64::from(wm_color[0]) * alpha) as u8;
+                    pixel[1] = (f64::from(pixel[1]) * (1.0 - alpha) + f64::from(wm_color[1]) * alpha) as u8;
+                    pixel[2] = (f64::from(pixel[2]) * (1.0 - alpha) + f64::from(wm_color[2]) * alpha) as u8;
                 }
             }
             if let Err(e) = rgba.save(&path) {
@@ -9122,7 +9096,7 @@ fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(format!("  │  {}", path_info)),
+        Span::raw(format!("  │  {path_info}")),
     ]))
     .block(
         Block::default()
@@ -9132,56 +9106,53 @@ fn render_image_preview(f: &mut Frame, app: &mut App, area: Rect) {
     .alignment(ratatui::layout::Alignment::Left);
     f.render_widget(header, chunks[0]);
 
-    match &app.image_preview {
-        Some(preview) => {
-            let inner = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-                .split(chunks[1]);
+    if let Some(preview) = &app.image_preview {
+        let inner = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(chunks[1]);
 
-            // ASCII art
-            let ascii_text: Vec<Line> = preview
-                .ascii_lines
-                .iter()
-                .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(Color::White))))
-                .collect();
-            let ascii_block = Paragraph::new(ascii_text).block(
-                Block::default()
-                    .title(format!(" {}x{} ", preview.width, preview.height))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
-            f.render_widget(ascii_block, inner[0]);
+        // ASCII art
+        let ascii_text: Vec<Line> = preview
+            .ascii_lines
+            .iter()
+            .map(|l| Line::from(Span::styled(l.clone(), Style::default().fg(Color::White))))
+            .collect();
+        let ascii_block = Paragraph::new(ascii_text).block(
+            Block::default()
+                .title(format!(" {}x{} ", preview.width, preview.height))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(ascii_block, inner[0]);
 
-            // File info
-            let info_lines = vec![
-                Line::from(vec![
-                    Span::styled("File: ", Style::default().fg(Color::Yellow)),
-                    Span::raw(&preview.filename),
-                ]),
-                Line::from(vec![
-                    Span::styled("Size: ", Style::default().fg(Color::Yellow)),
-                    Span::raw(format!("{}x{}", preview.width, preview.height)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Lines: ", Style::default().fg(Color::Yellow)),
-                    Span::raw(format!("{}", preview.ascii_lines.len())),
-                ]),
-            ];
-            let info_block = Paragraph::new(info_lines).block(
-                Block::default()
-                    .title(" Info ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
-            f.render_widget(info_block, inner[1]);
-        }
-        None => {
-            let msg = Paragraph::new("  画像を選択するとASCIIプレビューが表示されます。")
-                .style(Style::default().fg(Color::DarkGray))
-                .alignment(ratatui::layout::Alignment::Center);
-            f.render_widget(msg, chunks[1]);
-        }
+        // File info
+        let info_lines = vec![
+            Line::from(vec![
+                Span::styled("File: ", Style::default().fg(Color::Yellow)),
+                Span::raw(&preview.filename),
+            ]),
+            Line::from(vec![
+                Span::styled("Size: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{}x{}", preview.width, preview.height)),
+            ]),
+            Line::from(vec![
+                Span::styled("Lines: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{}", preview.ascii_lines.len())),
+            ]),
+        ];
+        let info_block = Paragraph::new(info_lines).block(
+            Block::default()
+                .title(" Info ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(info_block, inner[1]);
+    } else {
+        let msg = Paragraph::new("  画像を選択するとASCIIプレビューが表示されます。")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(msg, chunks[1]);
     }
 }
 
@@ -9218,10 +9189,8 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|job| {
             let fname = std::path::Path::new(&job.path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| job.path.clone());
-            ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
+                .file_name().map_or_else(|| job.path.clone(), |n| n.to_string_lossy().to_string());
+            ListItem::new(Line::from(Span::raw(format!("  {fname}"))))
         })
         .collect();
     let left_list = List::new(left_items).block(
@@ -9239,10 +9208,8 @@ fn render_split_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .flat_map(|g| g.files.iter())
         .map(|df| {
             let fname = std::path::Path::new(&df.0)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| df.0.clone());
-            ListItem::new(Line::from(Span::raw(format!("  {}", fname))))
+                .file_name().map_or_else(|| df.0.clone(), |n| n.to_string_lossy().to_string());
+            ListItem::new(Line::from(Span::raw(format!("  {fname}"))))
         })
         .collect();
     let right_list = List::new(right_items).block(
@@ -9295,7 +9262,7 @@ fn render_quick_actions(f: &mut Frame, app: &mut App, area: Rect) {
                 _ => " ",
             };
             ListItem::new(Line::from(Span::styled(
-                format!("  {} {}", icon, label),
+                format!("  {icon} {label}"),
                 style,
             )))
         })
@@ -9348,18 +9315,16 @@ fn render_recent_files(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|rf| {
             let fname = std::path::Path::new(&rf.path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| rf.path.clone());
+                .file_name().map_or_else(|| rf.path.clone(), |n| n.to_string_lossy().to_string());
             let size_str = if rf.size > 1_000_000 {
                 format!("{:.1} MB", rf.size as f64 / 1_000_000.0)
             } else {
                 format!("{:.1} KB", rf.size as f64 / 1_000.0)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", fname), Style::default().fg(Color::White)),
+                Span::styled(format!("  {fname} "), Style::default().fg(Color::White)),
                 Span::styled(
-                    format!("[{}] ", size_str),
+                    format!("[{size_str}] "),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(
@@ -9427,7 +9392,7 @@ fn render_tag_system(f: &mut Frame, app: &mut App, area: Rect) {
             ListItem::new(Line::from(vec![
                 Span::styled(format!("  📁 {} ", ft.file_pattern), style),
                 Span::styled(
-                    format!("[{}]", tags_str),
+                    format!("[{tags_str}]"),
                     Style::default().fg(Color::Yellow),
                 ),
             ]))
@@ -9487,7 +9452,7 @@ fn render_side_by_side_diff(f: &mut Frame, app: &mut App, area: Rect) {
                 } else {
                     Color::White
                 };
-                Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
+                Line::from(Span::styled(format!("  {l}"), Style::default().fg(color)))
             })
             .collect()
     };
@@ -9516,7 +9481,7 @@ fn render_side_by_side_diff(f: &mut Frame, app: &mut App, area: Rect) {
                 } else {
                     Color::White
                 };
-                Line::from(Span::styled(format!("  {}", l), Style::default().fg(color)))
+                Line::from(Span::styled(format!("  {l}"), Style::default().fg(color)))
             })
             .collect()
     };
@@ -9657,7 +9622,7 @@ fn render_rename_pattern(f: &mut Frame, app: &mut App, area: Rect) {
         Color::Yellow
     };
     let input_block = Paragraph::new(Line::from(Span::styled(
-        format!("  {}", current_pattern),
+        format!("  {current_pattern}"),
         Style::default().fg(input_style),
     )))
     .block(
@@ -9675,9 +9640,9 @@ fn render_rename_pattern(f: &mut Frame, app: &mut App, area: Rect) {
                 .iter()
                 .map(|(old, new)| {
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
+                        Span::styled(format!("  {old} "), Style::default().fg(Color::Red)),
                         Span::styled("→ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(new.to_string(), Style::default().fg(Color::Green)),
+                        Span::styled(new.clone(), Style::default().fg(Color::Green)),
                     ]))
                 })
                 .collect()
@@ -9748,13 +9713,13 @@ fn render_timeline(f: &mut Frame, app: &mut App, area: Rect) {
                 String::new()
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", icon), Style::default().fg(color)),
+                Span::styled(format!("  {icon} "), Style::default().fg(color)),
                 Span::styled(
                     format!("[{}] ", entry.timestamp),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::raw(&entry.description),
-                Span::styled(format!(" {}", progress_bar), Style::default().fg(color)),
+                Span::styled(format!(" {progress_bar}"), Style::default().fg(color)),
             ]))
         })
         .collect();
@@ -9812,7 +9777,7 @@ fn render_command_palette(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 Style::default().fg(Color::White)
             };
-            ListItem::new(Line::from(Span::styled(format!("  {} ", label), style)))
+            ListItem::new(Line::from(Span::styled(format!("  {label} "), style)))
         })
         .collect();
 
@@ -9875,7 +9840,7 @@ fn render_notification_center(f: &mut Frame, app: &mut App, area: Rect) {
             let read_marker = if notif.read { "  " } else { "  " };
             ListItem::new(Line::from(vec![
                 Span::raw(read_marker),
-                Span::styled(format!("{} ", icon), Style::default().fg(color)),
+                Span::styled(format!("{icon} "), Style::default().fg(color)),
                 Span::styled(
                     format!("[{}] ", notif.timestamp),
                     Style::default().fg(Color::DarkGray),
@@ -10045,9 +10010,7 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
         let mut file_items: Vec<ListItem> = Vec::new();
         for (i, (path, size)) in group.files.iter().enumerate() {
             let fname = std::path::Path::new(path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.clone());
+                .file_name().map_or_else(|| path.clone(), |n| n.to_string_lossy().to_string());
             let size_str = if *size > 1_000_000 {
                 format!("{:.1} MB", *size as f64 / 1_000_000.0)
             } else {
@@ -10060,14 +10023,14 @@ fn render_similar_images(f: &mut Frame, app: &mut App, area: Rect) {
             };
             let dist_info = if i > 0 {
                 let d = hamming_distance(group.hash, group.hash); // placeholder
-                format!(" dist:{}", d)
+                format!(" dist:{d}")
             } else {
                 " (基準)".to_string()
             };
             file_items.push(ListItem::new(Line::from(vec![
                 Span::styled(format!("  {:2}. {} ", i + 1, fname), style),
                 Span::styled(
-                    format!("[{}]", size_str),
+                    format!("[{size_str}]"),
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(dist_info, Style::default().fg(Color::Cyan)),
@@ -10092,7 +10055,7 @@ fn hash_cache_db() {
 
     match status {
         Ok(_) => {}
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => eprintln!("Error: {e}"),
     }
 }
 
@@ -10109,7 +10072,7 @@ fn render_rename_preview(f: &mut Frame, app: &mut App, area: Rect) {
         .split(area);
 
     let count = app.rename_preview_items.len();
-    let header = Paragraph::new(format!("  {} files will be renamed", count))
+    let header = Paragraph::new(format!("  {count} files will be renamed"))
         .style(
             Style::default()
                 .fg(theme.warning)
@@ -10134,7 +10097,7 @@ fn render_rename_preview(f: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|(old, new)| {
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", old), Style::default().fg(Color::Red)),
+                Span::styled(format!("  {old} "), Style::default().fg(Color::Red)),
                 Span::styled("→ ", Style::default().fg(theme.muted)),
                 Span::styled(new.clone(), Style::default().fg(Color::Green)),
             ]))
@@ -10168,7 +10131,7 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         app.folder_sync_source.clone()
     };
-    let src_block = Paragraph::new(format!("  📁 {}", src))
+    let src_block = Paragraph::new(format!("  📁 {src}"))
         .style(Style::default().fg(theme.fg))
         .block(Block::default().borders(Borders::ALL).title("Source (s)"));
     f.render_widget(src_block, chunks[0]);
@@ -10179,7 +10142,7 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
     } else {
         app.folder_sync_dest.clone()
     };
-    let dst_block = Paragraph::new(format!("  📁 {}", dst))
+    let dst_block = Paragraph::new(format!("  📁 {dst}"))
         .style(Style::default().fg(theme.fg))
         .block(
             Block::default()
@@ -10195,8 +10158,7 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
         "⚪ Stopped"
     };
     let status_block = Paragraph::new(format!(
-        "  {} │ r: Sync now │ w: Toggle watch",
-        watch_status
+        "  {watch_status} │ r: Sync now │ w: Toggle watch"
     ))
     .style(Style::default().fg(theme.accent))
     .block(Block::default().borders(Borders::ALL).title("Status"));
@@ -10210,7 +10172,7 @@ fn render_folder_sync(f: &mut Frame, app: &mut App, area: Rect) {
         .take(50)
         .map(|line| {
             ListItem::new(Line::from(Span::styled(
-                format!("  {}", line),
+                format!("  {line}"),
                 Style::default().fg(theme.muted),
             )))
         })
@@ -10252,9 +10214,9 @@ fn render_keybind_custom(f: &mut Frame, app: &mut App, area: Rect) {
             let value = if app.keybind_editing && i == app.keybind_selected {
                 format!("{} ▸ {}▌", name, app.keybind_input)
             } else {
-                format!("{}: [{}]", name, key)
+                format!("{name}: [{key}]")
             };
-            ListItem::new(Line::from(Span::styled(format!("  {}", value), style)))
+            ListItem::new(Line::from(Span::styled(format!("  {value}"), style)))
         })
         .collect();
 
@@ -10286,8 +10248,7 @@ struct GitHubRelease {
 #[allow(dead_code)]
 fn check_for_updates() -> Option<String> {
     let url = format!(
-        "https://api.github.com/repos/{}/releases/latest",
-        GITHUB_REPO
+        "https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     );
 
     let client = reqwest::blocking::Client::builder()
@@ -10301,13 +10262,13 @@ fn check_for_updates() -> Option<String> {
     let latest = release.tag_name.trim_start_matches('v');
     let current = CURRENT_VERSION;
 
-    if latest != current {
+    if latest == current {
+        None
+    } else {
         Some(format!(
             "New version available: v{} (current: v{})\nDownload: {}",
             latest, current, release.html_url
         ))
-    } else {
-        None
     }
 }
 

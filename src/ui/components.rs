@@ -85,7 +85,7 @@ pub fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
         _ => (" ", theme.muted, "Ready"),
     };
     Line::from(Span::styled(
-        format!(" {} {} ", icon, text),
+        format!(" {icon} {text} "),
         Style::default().fg(Color::White).bg(color),
     ))
 }
@@ -101,7 +101,7 @@ pub fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme)
         ButtonVariant::Ghost => (theme.fg, Color::Reset),
     };
     Line::from(Span::styled(
-        format!(" {} ", label),
+        format!(" {label} "),
         Style::default().fg(fg),
     ))
 }
@@ -117,7 +117,7 @@ pub fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'s
         BadgeVariant::Muted => theme.muted,
     };
     Line::from(Span::styled(
-        format!(" {} ", text),
+        format!(" {text} "),
         Style::default().fg(Color::White).bg(color),
     ))
 }
@@ -138,14 +138,14 @@ pub fn render_alert(
     };
     vec![
         Line::from(vec![
-            Span::styled(format!("  {} ", icon), Style::default().fg(color)),
+            Span::styled(format!("  {icon} "), Style::default().fg(color)),
             Span::styled(
                 title.to_string(),
                 Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(Span::styled(
-            format!("    {}", message),
+            format!("    {message}"),
             Style::default().fg(theme.muted),
         )),
     ]
@@ -155,7 +155,7 @@ pub fn render_alert(
 #[allow(dead_code)]
 pub fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(format!("{icon} "), Style::default().fg(theme.accent)),
         Span::styled(
             text.to_string(),
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
@@ -173,15 +173,15 @@ pub fn render_empty_state(
     vec![
         Line::from(""),
         Line::from(Span::styled(
-            format!("    {}", icon),
+            format!("    {icon}"),
             Style::default().fg(theme.muted),
         )),
         Line::from(Span::styled(
-            format!("    {}", title),
+            format!("    {title}"),
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            format!("    {}", message),
+            format!("    {message}"),
             Style::default().fg(theme.muted),
         )),
         Line::from(""),
@@ -200,7 +200,7 @@ pub fn render_card_frame<'a>(
     let mut lines = vec![Line::from(vec![
         Span::styled("┌", Style::default().fg(theme.muted)),
         Span::styled(
-            format!(" {} ", title),
+            format!(" {title} "),
             Style::default()
                 .fg(theme.accent)
                 .add_modifier(Modifier::BOLD),
@@ -240,18 +240,18 @@ pub fn render_file_table_row(
     };
     let bar = make_gauge_bar(progress, 10);
     Line::from(vec![
-        Span::styled(format!("{} ", icon), Style::default().fg(theme.accent)),
+        Span::styled(format!("{icon} "), Style::default().fg(theme.accent)),
         Span::styled(
             format!("{:<30}", truncate_str(name, 30)),
             Style::default().fg(theme.fg),
         ),
-        Span::styled(format!("{:>10}", size), Style::default().fg(theme.muted)),
-        Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+        Span::styled(format!("{size:>10}"), Style::default().fg(theme.muted)),
+        Span::styled(format!(" [{bar}]"), Style::default().fg(theme.primary)),
         Span::styled(
             format!(" {:>5.1}%", progress * 100.0),
             Style::default().fg(theme.accent),
         ),
-        Span::styled(format!(" {}", status), Style::default().fg(status_color)),
+        Span::styled(format!(" {status}"), Style::default().fg(status_color)),
     ])
 }
 
@@ -277,23 +277,23 @@ pub fn render_progress_detail(
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(format!(" [{}]", bar), Style::default().fg(theme.primary)),
+            Span::styled(format!(" [{bar}]"), Style::default().fg(theme.primary)),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(format!("Speed: {}", speed), Style::default().fg(theme.fg)),
+            Span::styled(format!("Speed: {speed}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
-            Span::styled(format!("ETA: {}", eta), Style::default().fg(theme.fg)),
+            Span::styled(format!("ETA: {eta}"), Style::default().fg(theme.fg)),
             Span::styled("  │  ", Style::default().fg(theme.muted)),
             Span::styled(
-                format!("Elapsed: {}", elapsed),
+                format!("Elapsed: {elapsed}"),
                 Style::default().fg(theme.fg),
             ),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(
-                format!("Files: {}/{}", files_done, total_files),
+                format!("Files: {files_done}/{total_files}"),
                 Style::default().fg(theme.muted),
             ),
         ]),
@@ -329,7 +329,7 @@ pub fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme)
         };
 
         let toast_block = Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", icon), Style::default().fg(color)),
+            Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
                 truncate_str(&toast.message, toast_width.saturating_sub(4)),
                 Style::default().fg(theme.fg),
@@ -382,7 +382,7 @@ pub fn make_gauge_bar(ratio: f64, width: usize) -> String {
     if filled < width && partial_idx > 0 {
         bar.push(GAUGE_CHARS[partial_idx.min(3)]);
     }
-    for _ in 0..empty.saturating_sub(if partial_idx > 0 { 1 } else { 0 }) {
+    for _ in 0..empty.saturating_sub(usize::from(partial_idx > 0)) {
         bar.push('░');
     }
     bar
@@ -397,7 +397,7 @@ pub fn format_size(bytes: u64) -> String {
     } else if bytes >= 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     }
 }
 
@@ -407,12 +407,12 @@ pub fn format_duration(secs: f64) -> String {
         let h = (secs / 3600.0) as u64;
         let m = ((secs % 3600.0) / 60.0) as u64;
         let s = (secs % 60.0) as u64;
-        format!("{}h{}m{}s", h, m, s)
+        format!("{h}h{m}m{s}s")
     } else if secs >= 60.0 {
         let m = (secs / 60.0) as u64;
         let s = (secs % 60.0) as u64;
-        format!("{}m{}s", m, s)
+        format!("{m}m{s}s")
     } else {
-        format!("{:.1}s", secs)
+        format!("{secs:.1}s")
     }
 }

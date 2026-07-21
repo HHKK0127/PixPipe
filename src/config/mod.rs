@@ -142,7 +142,7 @@ impl AppConfig {
 
     /// List all preset names
     pub fn preset_names(&self) -> Vec<&str> {
-        self.presets.keys().map(|s| s.as_str()).collect()
+        self.presets.keys().map(std::string::String::as_str).collect()
     }
 }
 

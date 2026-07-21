@@ -37,7 +37,7 @@ pub fn safe_parent(path: &Path) -> PathBuf {
 
 /// Safe mutex lock with poison recovery
 pub fn safe_lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|e| e.into_inner())
+    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Copy file with verification
@@ -74,17 +74,14 @@ pub fn move_file_verified(src: &Path, dst: &Path) -> Result<u64> {
     use std::fs;
 
     // Try rename first (atomic on same filesystem)
-    match fs::rename(src, dst) {
-        Ok(()) => {
-            let metadata = fs::metadata(dst)?;
-            Ok(metadata.len())
-        }
-        Err(_) => {
-            // Cross-filesystem: copy + delete
-            let bytes = copy_file_verified(src, dst)?;
-            fs::remove_file(src)?;
-            Ok(bytes)
-        }
+    if let Ok(()) = fs::rename(src, dst) {
+        let metadata = fs::metadata(dst)?;
+        Ok(metadata.len())
+    } else {
+        // Cross-filesystem: copy + delete
+        let bytes = copy_file_verified(src, dst)?;
+        fs::remove_file(src)?;
+        Ok(bytes)
     }
 }
 
@@ -152,20 +149,20 @@ pub fn format_size(bytes: u64) -> String {
     } else if bytes >= KB {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     }
 }
 
 /// Format duration as human-readable string
 pub fn format_duration(ms: u64) -> String {
     if ms < 1000 {
-        format!("{}ms", ms)
+        format!("{ms}ms")
     } else if ms < 60_000 {
         format!("{:.1}s", ms as f64 / 1000.0)
     } else {
         let mins = ms / 60_000;
         let secs = (ms % 60_000) / 1000;
-        format!("{}m {}s", mins, secs)
+        format!("{mins}m {secs}s")
     }
 }
 
@@ -200,9 +197,9 @@ pub fn unique_path(path: &Path) -> PathBuf {
     let mut counter = 1;
     loop {
         let new_name = if ext.is_empty() {
-            format!("{} ({})", stem, counter)
+            format!("{stem} ({counter})")
         } else {
-            format!("{} ({}).{}", stem, counter, ext)
+            format!("{stem} ({counter}).{ext}")
         };
 
         let new_path = parent.join(&new_name);

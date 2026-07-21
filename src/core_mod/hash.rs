@@ -36,7 +36,7 @@ pub fn compute_hash(path: &Path, algorithm: &str) -> Result<String> {
         "xxh3" => {
             use xxhash_rust::xxh3::xxh3_64;
             let hash = xxh3_64(&buffer);
-            Ok(format!("{:016x}", hash))
+            Ok(format!("{hash:016x}"))
         }
         _ => {
             use sha2::{Digest, Sha256};
@@ -72,7 +72,7 @@ pub fn compute_phash(path: &Path) -> Result<u64> {
 
     let mut hash = 0u64;
     for i in 0..8 {
-        hash = (hash << 8) | result[i] as u64;
+        hash = (hash << 8) | u64::from(result[i]);
     }
 
     Ok(hash)
@@ -121,10 +121,10 @@ pub fn compute_dir_hash(dir: &Path, algorithm: &str) -> Result<String> {
     use std::fs;
 
     let mut hasher = Sha256::new();
-    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(|e| e.ok()).collect();
+    let mut entries: Vec<_> = fs::read_dir(dir)?.filter_map(std::result::Result::ok).collect();
 
     // Sort for deterministic hash
-    entries.sort_by_key(|e| e.path());
+    entries.sort_by_key(std::fs::DirEntry::path);
 
     for entry in entries {
         let path = entry.path();
