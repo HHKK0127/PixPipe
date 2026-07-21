@@ -136,10 +136,28 @@
       "content": "CI passes with pedantic clippy rules. All 35 tests pass. main.rs reduced to ~9,822 lines. Code quality significantly improved.",
       "tags": ["ci", "clippy", "quality"],
       "compressed": false
+    },
+    {
+      "id": "coverage-001",
+      "timestamp": "2026/07/21 17:20:00",
+      "category": "decision",
+      "priority": "medium",
+      "content": "Test coverage measured at 4.90% (303/6180 lines). Coverage report generated with cargo-tarpaulin. Main areas: config/mod.rs (30/59), core_mod/files.rs (0/119), core_mod/hash.rs (17/75), main.rs (256/5677), ui/components.rs (0/200), ui/render.rs (0/50).",
+      "tags": ["testing", "coverage", "quality"],
+      "compressed": false
+    },
+    {
+      "id": "rustdoc-001",
+      "timestamp": "2026/07/21 17:20:00",
+      "category": "decision",
+      "priority": "high",
+      "content": "Rustdoc comments added to main functions: main(), ui(), run_app(), all render_* functions, helper functions (truncate_str, make_gauge_bar, format_duration), and UI component functions.",
+      "tags": ["documentation", "rustdoc", "quality"],
+      "compressed": false
     }
   ],
   "metadata": {
-    "totalEntries": 15,
+    "totalEntries": 17,
     "compressedCount": 0,
     "sessionCount": 1
   }
