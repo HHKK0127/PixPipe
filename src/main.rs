@@ -227,7 +227,7 @@ impl History {
         Self::default()
     }
 
-    fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn save(&self) -> anyhow::Result<()> {
         let data = serde_json::to_string_pretty(self)?;
         fs::write("history.json", data)?;
         Ok(())
@@ -269,7 +269,7 @@ impl UndoLog {
         Self::default()
     }
 
-    fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn save(&self) -> anyhow::Result<()> {
         let data = serde_json::to_string_pretty(self)?;
         fs::write("undo_log.json", data)?;
         Ok(())
@@ -2535,9 +2535,9 @@ impl App {
     }
 
     // Feature #17: Retry logic wrapper
-    fn retry_operation<F, T>(&mut self, mut op: F) -> Result<T, Box<dyn std::error::Error>>
+    fn retry_operation<F, T>(&mut self, mut op: F) -> anyhow::Result<T>
     where
-        F: FnMut() -> Result<T, Box<dyn std::error::Error>>,
+        F: FnMut() -> anyhow::Result<T>,
     {
         let max = self.config.max_retries;
         for attempt in 0..=max {
@@ -2553,7 +2553,7 @@ impl App {
                 }
             }
         }
-        Err("Max retries exceeded".into())
+        Err(anyhow::anyhow!("Max retries exceeded"))
     }
 
     // Feature #20: Watch mode scan
@@ -2626,7 +2626,7 @@ impl App {
     }
 
     // Feature #12: Export log
-    fn export_log(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn export_log(&self) -> anyhow::Result<()> {
         let logs = safe_lock(&self.logs);
         let path = format!(
             "io_tool_log_{}.txt",
@@ -2775,7 +2775,7 @@ impl App {
     }
 
     // New #10: Export history
-    fn export_history_csv(&self) -> Result<String, Box<dyn std::error::Error>> {
+    fn export_history_csv(&self) -> anyhow::Result<String> {
         let mut csv = String::from("timestamp,files_processed,errors,duration_secs\n");
         for entry in &self.history.entries {
             csv.push_str(&format!(
@@ -2791,7 +2791,7 @@ impl App {
         Ok(path)
     }
 
-    fn export_history_json(&self) -> Result<String, Box<dyn std::error::Error>> {
+    fn export_history_json(&self) -> anyhow::Result<String> {
         let json = serde_json::to_string_pretty(&self.history)?;
         let path = format!(
             "io_tool_history_{}.json",
@@ -2842,7 +2842,7 @@ impl App {
     }
 
     // New #19: Config import/export
-    fn export_config(&self) -> Result<String, Box<dyn std::error::Error>> {
+    fn export_config(&self) -> anyhow::Result<String> {
         let json = serde_json::to_string_pretty(&self.config)?;
         let path = format!(
             "io_tool_config_export_{}.json",
@@ -2852,7 +2852,7 @@ impl App {
         Ok(path)
     }
 
-    fn import_config(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn import_config(&mut self, path: &str) -> anyhow::Result<()> {
         let data = fs::read_to_string(path)?;
         let imported: Config = serde_json::from_str(&data)?;
         self.config = imported;
@@ -3181,7 +3181,7 @@ impl App {
     }
 
     // B3 #19: Export report
-    fn export_report(&self) -> Result<String, Box<dyn std::error::Error>> {
+    fn export_report(&self) -> anyhow::Result<String> {
         let format = if self.report_format == 0 {
             "html"
         } else {
@@ -3951,7 +3951,7 @@ fn run_with_progress(
     set_detail: &dyn Fn(String),
     add_error: &dyn Fn(String),
     inc_files: &dyn Fn(usize),
-) -> Result<usize, Box<dyn std::error::Error>> {
+) -> anyhow::Result<usize> {
     let files: Vec<_> = fs::read_dir(dest)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
@@ -8828,7 +8828,7 @@ fn is_image_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn calculate_sha256(path: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+fn calculate_sha256(path: &PathBuf) -> anyhow::Result<String> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
     let mut hasher = Sha256::new();
@@ -8905,7 +8905,7 @@ fn parse_exif(path: &PathBuf) -> Option<Vec<(String, String)>> {
 // ============================================================
 
 /// Average Hash (aHash): resize to 8x8 grayscale, compare to mean
-fn calculate_ahash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
+fn calculate_ahash(path: &PathBuf) -> anyhow::Result<u64> {
     let img = image::open(path)?;
     let gray = img
         .resize_exact(8, 8, image::imageops::FilterType::Lanczos3)
@@ -8922,7 +8922,7 @@ fn calculate_ahash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
 }
 
 /// Difference Hash (dHash): compare adjacent pixels horizontally
-fn calculate_dhash(path: &PathBuf) -> Result<u64, Box<dyn std::error::Error>> {
+fn calculate_dhash(path: &PathBuf) -> anyhow::Result<u64> {
     let img = image::open(path)?;
     let gray = img
         .resize_exact(9, 8, image::imageops::FilterType::Lanczos3)
@@ -8945,7 +8945,7 @@ fn hamming_distance(a: u64, b: u64) -> u32 {
     (a ^ b).count_ones()
 }
 
-fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn rename_by_timestamp(dest: &str) -> anyhow::Result<()> {
     let entries: Vec<_> = fs::read_dir(dest)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file() && is_image_file(&e.path()))
@@ -8974,7 +8974,7 @@ fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn get_unique_filename(path: &Path, name: &str) -> anyhow::Result<String> {
     let mut new_path = safe_parent(path);
     new_path.push(name);
 
@@ -8999,10 +8999,10 @@ fn get_unique_filename(path: &Path, name: &str) -> Result<String, Box<dyn std::e
         }
     }
 
-    Err("Could not find unique filename".into())
+    Err(anyhow::anyhow!("Could not find unique filename"))
 }
 
-fn rename_remove_underscore_parens(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn rename_remove_underscore_parens(dest: &str) -> anyhow::Result<()> {
     let entries: Vec<_> = fs::read_dir(dest)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file() && is_image_file(&e.path()))
@@ -9050,7 +9050,7 @@ fn remove_trailing_parentheses(s: &str) -> Option<String> {
     }
 }
 
-fn convert_to_jxl(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_to_jxl(dest: &str) -> anyhow::Result<()> {
     let status = Command::new("powershell")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(r"Z:\Closet\bat\jpg-to-jxl.ps1")
@@ -9059,7 +9059,7 @@ fn convert_to_jxl(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
         .status()?;
 
     if !status.success() {
-        return Err("JXL conversion failed".into());
+        return Err(anyhow::anyhow!("JXL conversion failed"));
     }
     Ok(())
 }
