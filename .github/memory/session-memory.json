@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-07-21T15:49:00Z",
+  "lastUpdated": "2026-07-21T15:59:00Z",
   "entries": [
     {
       "id": "proj-001",
@@ -91,10 +91,28 @@
       "content": "Rust制約：'core'は予約語のためモジュール名に使用不可。core_modなどの代替名が必要。pub(crate)でクレート内可視性を制御。",
       "tags": ["rust", "constraint"],
       "compressed": false
+    },
+    {
+      "id": "refactor-001",
+      "timestamp": "2026-07-21T15:59:00Z",
+      "category": "decision",
+      "priority": "high",
+      "content": "render関数の分離を試みたが、内部依存関係（safe_lock, format_size等）によりブロック。main.rs内のヘルパー関数を先にutils.rsに抽出する必要がある。代わりにregionマーカーを追加してコード構造を改善。",
+      "tags": ["refactoring", "blocked", "render-functions"],
+      "compressed": false
+    },
+    {
+      "id": "refactor-002",
+      "timestamp": "2026-07-21T15:59:00Z",
+      "category": "decision",
+      "priority": "medium",
+      "content": "リファクタリング計画：Phase 4a: ヘルパー関数をutils.rsに抽出 → Phase 4b: render関数をui/render.rsに移動 → Phase 4c: イベントハンドリングをevent.rsに分離 → Phase 4d: App構造体のメソッドをモジュールに分散。",
+      "tags": ["refactoring", "plan", "module-separation"],
+      "compressed": false
     }
   ],
   "metadata": {
-    "totalEntries": 10,
+    "totalEntries": 12,
     "compressedCount": 0,
     "sessionCount": 1
   }
