@@ -2,7 +2,9 @@ mod config;
 mod core_mod;
 mod ui;
 
-use core_mod::files::{safe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_size};
+use core_mod::files::{
+    format_size, safe_extension, safe_file_name, safe_file_stem, safe_lock, safe_parent,
+};
 
 use anyhow::{Context, Result};
 use chrono::Utc;
