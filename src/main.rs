@@ -1253,7 +1253,18 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let trunc = max_len.saturating_sub(3);
+        // Find a valid char boundary at or before trunc
+        let end = if trunc >= s.len() {
+            s.len()
+        } else {
+            let mut boundary = trunc;
+            while boundary > 0 && !s.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            boundary
+        };
+        format!("{}...", &s[..end])
     }
 }
 
@@ -2633,8 +2644,11 @@ impl App {
                 }
             }
         }
-        self.size_comparisons
-            .sort_by(|a, b| b.reduction_pct.partial_cmp(&a.reduction_pct).unwrap());
+        self.size_comparisons.sort_by(|a, b| {
+            b.reduction_pct
+                .partial_cmp(&a.reduction_pct)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     // New #3: Error details collection
