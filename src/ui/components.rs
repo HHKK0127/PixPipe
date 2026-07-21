@@ -1,6 +1,8 @@
 // UI Components - Ferrocopy-inspired components for PixPipe TUI
 // These components provide modern, styled UI elements.
 
+#![allow(dead_code)]
+
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
