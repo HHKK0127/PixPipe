@@ -1,5 +1,8 @@
 // Render Module - Main rendering functions for PixPipe TUI
 // This module contains all the screen rendering functions.
+// These are stub functions - actual implementations will be migrated from main.rs.
+
+#![allow(dead_code)]
 
 use ratatui::layout::Rect;
 use ratatui::Frame;

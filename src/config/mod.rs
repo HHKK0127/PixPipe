@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// Application configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     pub general: GeneralConfig,
     pub processing: ProcessingConfig,
@@ -42,34 +42,6 @@ pub struct UiConfig {
     pub show_sidebar: bool,
     pub compact_mode: bool,
     pub animation_speed: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Preset {
-    pub name: String,
-    pub description: String,
-    pub format: Option<String>,
-    pub quality: Option<u8>,
-    pub resize: Option<ResizeConfig>,
-    pub filters: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResizeConfig {
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub maintain_aspect: bool,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            processing: ProcessingConfig::default(),
-            ui: UiConfig::default(),
-            presets: HashMap::new(),
-        }
-    }
 }
 
 impl Default for GeneralConfig {
@@ -108,6 +80,23 @@ impl Default for UiConfig {
             animation_speed: 300,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Preset {
+    pub name: String,
+    pub description: String,
+    pub format: Option<String>,
+    pub quality: Option<u8>,
+    pub resize: Option<ResizeConfig>,
+    pub filters: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResizeConfig {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub maintain_aspect: bool,
 }
 
 impl AppConfig {
