@@ -402,6 +402,38 @@ Fixed `partial_cmp().unwrap()` panic in file sorting when file sizes contain NaN
 | BadgeVariant | Various | Status indicators |
 | AlertVariant | Various | Alert messages with severity levels |
 
+## Module Separation (Phase 3)
+
+The monolithic `main.rs` (~10,500 lines) has been refactored into organized modules:
+
+```
+src/
+├── main.rs           — App struct, event loop, render functions (~10,500 lines)
+├── ui/
+│   ├── mod.rs        — UI module declarations
+│   ├── components.rs — Ferrocopy-inspired UI components (Toast, Badge, Alert, etc.)
+│   └── render.rs     — Stub render functions for all screens
+├── core_mod/
+│   ├── mod.rs        — Core module declarations
+│   ├── files.rs      — File operations (copy, move, hash, sanitize)
+│   └── hash.rs       — Hash computation (SHA256, BLAKE3, XXH3, perceptual hash)
+└── config/
+    └── mod.rs        — AppConfig, KeyBindings, PluginConfig, ScheduledTask
+```
+
+### Key Changes
+- `App`, `Theme`, `FileTreeNode` structs are now `pub(crate)` with `pub(crate)` fields
+- All referenced types (AppState, MenuItem, Config, etc.) are `pub(crate)` for visibility consistency
+- New modules have `#![allow(dead_code)]` for stub functions pending integration
+- Added `toml` dependency for configuration serialization
+
+## CI/CD Status
+
+✅ All 3 platforms pass (ubuntu, windows, macos)
+- Zero clippy warnings with `-W warnings` flag
+- All 35 tests pass (24 unit + 11 integration)
+- cargo fmt clean
+
 ## Dependencies
 
 - `ratatui` 0.29 — TUI フレームワーク
@@ -420,6 +452,7 @@ Fixed `partial_cmp().unwrap()` panic in file sorting when file sizes contain NaN
 - `zip` — ZIP アーカイブ
 - `open` — ファイル関連付け実行
 - `anyhow` / `thiserror` — エラーハンドリング
+- `toml` — 設定ファイルシリアライズ
 - `log` / `env_logger` — ロギング
 - `num_cpus` — CPU コア検出
 - `zip-extract` — ZIP 展開
