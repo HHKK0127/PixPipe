@@ -937,6 +937,16 @@ impl Theme {
 use ui::components::{AlertVariant, BadgeVariant, ButtonVariant, Toast, ToastType};
 
 /// Render a status badge with icon and color
+/// ステータスバッジの描画
+///
+/// ステータスに応じた色付きバッジを生成します。
+///
+/// # Arguments
+/// * `status` - ステータス文字列（"success", "error", "warning"等）
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLine
 fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
     let (icon, color, text) = match status {
         "copying" | "processing" => ("▶", theme.accent, "Processing"),
@@ -954,6 +964,17 @@ fn render_status_badge(status: &str, theme: &Theme) -> Line<'static> {
 
 /// Render a styled button with variant
 #[allow(dead_code)]
+/// ボタンバリアントの描画
+///
+/// ボタンの種類に応じたスタイルを適用します。
+///
+/// # Arguments
+/// * `label` - ボタンラベル
+/// * `variant` - ボタンバリアント（Primary, Secondary, Danger等）
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLine
 fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> Line<'static> {
     let (fg, _bg) = match variant {
         ButtonVariant::Primary => (Color::White, theme.primary),
@@ -967,6 +988,17 @@ fn render_button_variant(label: &str, variant: ButtonVariant, theme: &Theme) -> 
 
 /// Render a badge with variant
 #[allow(dead_code)]
+/// バッジの描画
+///
+/// テキストとバリアントに応じたバッジを生成します。
+///
+/// # Arguments
+/// * `text` - バッジテキスト
+/// * `variant` - バッジバリアント（Info, Success, Warning, Error）
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLine
 fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'static> {
     let color = match variant {
         BadgeVariant::Info => theme.primary,
@@ -983,6 +1015,18 @@ fn render_badge(text: &str, variant: BadgeVariant, theme: &Theme) -> Line<'stati
 
 /// Render an alert box with icon, title, and message
 #[allow(dead_code)]
+/// アラートの描画
+///
+/// アラートメッセージを描画します。
+///
+/// # Arguments
+/// * `title` - アラートタイトル
+/// * `message` - アラートメッセージ
+/// * `variant` - アラートバリアント（Info, Success, Warning, Error）
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLineベクター
 fn render_alert(
     title: &str,
     message: &str,
@@ -1012,6 +1056,17 @@ fn render_alert(
 
 /// Render a section heading with icon
 #[allow(dead_code)]
+/// セクション見出しの描画
+///
+/// アイコン付きのセクション見出しを生成します。
+///
+/// # Arguments
+/// * `icon` - アイコン文字列
+/// * `text` - 見出しテキスト
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLine
 fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{icon} "), Style::default().fg(theme.accent)),
@@ -1023,6 +1078,18 @@ fn render_section_heading(icon: &str, text: &str, theme: &Theme) -> Line<'static
 }
 
 /// Render an empty state placeholder
+/// 空状態の描画
+///
+/// データがない場合の空状態メッセージを描画します。
+///
+/// # Arguments
+/// * `icon` - アイコン文字列
+/// * `title` - タイトル
+/// * `message` - メッセージ
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLineベクター
 fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> Vec<Line<'static>> {
     vec![
         Line::from(""),
@@ -1044,6 +1111,18 @@ fn render_empty_state(icon: &str, title: &str, message: &str, theme: &Theme) -> 
 
 /// Render a card/panel frame with border
 #[allow(dead_code)]
+/// カードフレームの描画
+///
+/// カード形式のUIコンポーネントを描画します。
+///
+/// # Arguments
+/// * `title` - カードタイトル
+/// * `icon` - アイコン
+/// * `content` - コンテンツ
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLineベクター
 fn render_card_frame<'a>(
     title: &str,
     content_lines: Vec<Line<'a>>,
@@ -1078,6 +1157,17 @@ fn render_card_frame<'a>(
 
 /// Render a file table row with columns
 #[allow(dead_code)]
+/// ファイルテーブル行の描画
+///
+/// ファイル一覧テーブルの行を描画します。
+///
+/// # Arguments
+/// * `file` - ファイル情報
+/// * `theme` - テーマ設定
+/// * `selected` - 選択状態
+///
+/// # Returns
+/// スタイル付きLine
 fn render_file_table_row(
     icon: &str,
     name: &str,
@@ -1111,6 +1201,18 @@ fn render_file_table_row(
 
 /// Render enhanced progress display with speed, ETA, elapsed
 #[allow(dead_code, clippy::too_many_arguments)]
+/// 進捗詳細の描画
+///
+/// 処理進捗の詳細情報を描画します。
+///
+/// # Arguments
+/// * `label` - ラベル
+/// * `current` - 現在値
+/// * `total` - 合計値
+/// * `theme` - テーマ設定
+///
+/// # Returns
+/// スタイル付きLineベクター
 fn render_progress_detail(
     progress: f64,
     speed: &str,
@@ -1159,6 +1261,15 @@ fn render_progress_detail(
 }
 
 /// Render toast overlay (top-right corner)
+/// トースト通知の描画
+///
+/// 画面右上にトースト通知を描画します。
+///
+/// # Arguments
+/// * `toasts` - トーストリスト
+/// * `area` - 描画領域
+/// * `f` - フレーム
+/// * `theme` - テーマ設定
 fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme) {
     let max_toasts = 3;
     let toast_width = 40.min(area.width.saturating_sub(2) as usize);
@@ -1201,6 +1312,16 @@ fn render_toasts(toasts: &[Toast], area: Rect, f: &mut Frame, theme: &Theme) {
 // These are utility functions used by render functions and other parts of the code.
 // TODO: Extract to src/utils.rs for better organization
 
+/// 文字列を指定長に切り詰める
+///
+/// 長すぎる文字列を切り詰め、末尾に「...」を追加します。
+///
+/// # Arguments
+/// * `s` - 元の文字列
+/// * `max_len` - 最大長
+///
+/// # Returns
+/// 切り詰められた文字列
 fn truncate_str(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
@@ -1227,6 +1348,16 @@ fn truncate_str(s: &str, max_len: usize) -> String {
 const GAUGE_CHARS: &[char] = &['░', '▒', '▓', '█'];
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/// ゲージバーの生成
+///
+/// 進捗率に基づいてゲージバー文字列を生成します。
+///
+/// # Arguments
+/// * `ratio` - 進捗率（0.0〜1.0）
+/// * `width` - バーの幅
+///
+/// # Returns
+/// ゲージバー文字列（例: "[████████░░░░░░░░] 50%"）
 fn make_gauge_bar(ratio: f64, width: usize) -> String {
     let filled = (ratio * width as f64) as usize;
     let empty = width.saturating_sub(filled);
@@ -1257,6 +1388,15 @@ fn _make_sub_progress_bar(label: &str, ratio: f64, width: usize) -> String {
 
 // format_size is now imported from core_mod::files
 
+/// 秒数を人間が読みやすい形式に変換
+///
+/// 秒数を「時:分:秒」形式に変換します。
+///
+/// # Arguments
+/// * `secs` - 秒数
+///
+/// # Returns
+/// フォーマットされた時間文字列（例: "1:23:45"）
 fn format_duration(secs: f64) -> String {
     if secs < 60.0 {
         format!("{secs:.1}s")
@@ -3305,6 +3445,19 @@ impl App {
 // ============================================================
 
 #[allow(clippy::too_many_arguments)]
+/// フルプロセスの実行
+///
+/// 指定されたステップの処理を実行します。
+/// 各ステップに応じたファイル操作（移動、重複削除、リネーム等）を行います。
+///
+/// # Arguments
+/// * `step` - 実行するステップ番号（0〜4）
+/// * `config` - アプリケーション設定
+/// * `add_error` - エラー追加用コールバック
+/// * `progress_tx` - 進捗通知用チャンネル
+///
+/// # Returns
+/// 処理されたファイル数
 fn run_full_process(
     config: &Config,
     step_enabled: &[bool],
@@ -3979,6 +4132,15 @@ fn show_cli_menu() {
 // Main
 // ============================================================
 
+/// アプリケーションのエントリーポイント
+///
+/// 設定の読み込み、ターミナルの初期化、TUIアプリケーションの起動を行います。
+/// CLIモードとTUIモードの両方をサポートします。
+///
+/// # Errors
+/// - 設定ファイルの読み込み失敗
+/// - ターミナルの初期化失敗
+/// - アプリケーション実行時のエラー
 fn main() -> Result<()> {
     // Initialize logging with file output
     let log_file = std::fs::OpenOptions::new()
@@ -4033,6 +4195,18 @@ fn main() -> Result<()> {
 // TUI Event Loop
 // ============================================================
 
+/// TUIアプリケーションのメインループ
+///
+/// イベント処理、状態更新、UI描画を繰り返し実行します。
+/// キーマウスイベントによる画面遷移と操作を処理します。
+///
+/// # Arguments
+/// * `terminal` - ターミナルインスタンス
+/// * `app` - アプリケーション状態
+///
+/// # Errors
+/// - I/Oエラー
+/// - イベント処理エラー
 fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
@@ -6067,6 +6241,14 @@ fn notify_done(success: bool) {
 // TUI Rendering
 // ============================================================
 
+/// メインのUI描画関数
+///
+/// アプリケーションの現在の状態に基づいて、適切な画面を描画します。
+/// 画面遷移: スプラッシュ → メニュー → ステップ選択 → プレビュー → 処理 → 完了
+///
+/// # Arguments
+/// * `f` - フレーム（描画コンテキスト）
+/// * `app` - アプリケーション状態
 fn ui(f: &mut Frame, app: &mut App) {
     let theme = app.theme();
 
@@ -6230,6 +6412,15 @@ fn ui(f: &mut Frame, app: &mut App) {
 // Current blocker: render functions call internal functions (safe_lock, format_size, etc.)
 // that are defined in main.rs. Need to extract those to utils module first.
 
+/// ステータスバーの描画
+///
+/// 画面下部のステータスバーを描画します。
+/// 操作ヒント、現在のモード、テーマ情報を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let footer_text = match app.state {
@@ -6292,6 +6483,15 @@ fn render_status_bar(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(footer, area);
 }
 
+/// 情報バーの描画
+///
+/// 画面上部の情報バーを描画します。
+/// CPU使用率、メモリ使用量、処理状況を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let now = chrono::Local::now().format("%H:%M:%S");
@@ -6327,6 +6527,15 @@ fn render_info_bar(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(bar, area);
 }
 
+/// スプラッシュ画面の描画
+///
+/// アプリケーション起動時の初期画面を描画します。
+/// ロゴ、バージョン情報、読み込み状況を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
     let elapsed = app.splash_start.elapsed();
@@ -6390,6 +6599,15 @@ fn render_splash(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
+/// メニュー画面の描画
+///
+/// メインメニューを描画します。5ステップの処理オプションと
+/// テーマ切替、プロファイル切替などの設定を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
@@ -6504,6 +6722,15 @@ fn render_menu(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(desc, chunks[1]);
 }
 
+/// ステップ選択画面の描画
+///
+/// 処理ステップの詳細設定画面を描画します。
+/// ソース/デスティネーションパスの選択、オプション設定を行います。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_step_select(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
@@ -6573,6 +6800,15 @@ fn render_step_select(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(summary, chunks[1]);
 }
 
+/// プレビュー画面の描画
+///
+/// 処理実行前のプレビューを描画します。
+/// 対象ファイル一覧、推定処理時間、設定内容を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
@@ -6677,6 +6913,15 @@ fn render_preview(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
+/// 処理中画面の描画
+///
+/// ファイル処理の進行状況を描画します。
+/// プログレスバー、処理速度、ETA、現在のファイルを表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
@@ -6796,6 +7041,15 @@ fn render_processing(f: &mut Frame, app: &mut App, area: Rect) {
     render_log(f, app, chunks[4], &theme);
 }
 
+/// 完了画面の描画
+///
+/// 処理完了後の結果画面を描画します。
+/// 処理結果サマリー、エラー情報、統計情報を表示します。
+///
+/// # Arguments
+/// * `f` - フレーム
+/// * `app` - アプリケーション状態
+/// * `area` - 描画領域
 fn render_done(f: &mut Frame, app: &mut App, area: Rect) {
     let theme = app.theme();
 
