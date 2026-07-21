@@ -118,10 +118,28 @@
       "content": "stub関数の統合完了。core_mod/files.rsからsafe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_sizeをインポートし、main.rs内の重複定義を削除。main.rsを38行削減。全35テスト成功。",
       "tags": ["refactoring", "completed", "module-integration"],
       "compressed": false
+    },
+    {
+      "id": "clippy-pedantic",
+      "timestamp": "2026/07/21 16:30:00",
+      "category": "decision",
+      "priority": "high",
+      "content": "Clippy pedantic rules enforced (260 auto-fixes). Remaining 30 warnings suppressed with targeted allows: cast_precision_loss, cast_possible_truncation, cast_sign_loss, cast_lossless, match_same_arms, struct_excessive_bools, too_many_lines. Format! string inlining was the largest fix (165 warnings).",
+      "tags": ["clippy", "rust", "code-quality"],
+      "compressed": false
+    },
+    {
+      "id": "ci-status-003",
+      "timestamp": "2026/07/21 16:30:00",
+      "category": "decision",
+      "priority": "high",
+      "content": "CI passes with pedantic clippy rules. All 35 tests pass. main.rs reduced to ~9,822 lines. Code quality significantly improved.",
+      "tags": ["ci", "clippy", "quality"],
+      "compressed": false
     }
   ],
   "metadata": {
-    "totalEntries": 13,
+    "totalEntries": 15,
     "compressedCount": 0,
     "sessionCount": 1
   }
