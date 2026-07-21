@@ -427,6 +427,7 @@ src/
 - ✅ Core file operations in core_mod/files.rs
 - ✅ Hash computation in core_mod/hash.rs
 - ✅ Configuration structs in config/mod.rs
+- ✅ Integrated core_mod/files.rs helpers (safe_file_name, format_size, etc.)
 - ⏳ Render functions still in main.rs (blocked by internal dependencies)
 
 ### Planned Refactoring Path
@@ -469,15 +470,15 @@ src/
 
 ## High Priority Improvements (Planned)
 
-### 1. Render Function Separation (Blocked)
-**Status**: Blocked by internal dependencies
-**Blocker**: Render functions call helper functions (safe_lock, format_size, etc.) defined in main.rs
-**Solution**: Extract helpers to src/utils.rs first, then move render functions
+### 1. ✅ Stub Function Integration (Completed)
+**Status**: Completed
+**Action**: Integrated core_mod/files.rs helpers to replace duplicate code in main.rs
+**Result**: Removed safe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_size duplicates
 
-### 2. Stub Function Integration
-**Status**: Ready to implement
-**Action**: Use core_mod/files.rs helpers to replace duplicate code in main.rs
-**Target**: format_size, sanitize_filename, safe_copy, safe_move
+### 2. Render Function Separation (Blocked)
+**Status**: Blocked by internal dependencies
+**Blocker**: Render functions call helper functions (truncate_str, make_gauge_bar, etc.) defined in main.rs
+**Solution**: Extract helpers to src/utils.rs first, then move render functions
 
 ### 3. Event Handler Separation
 **Status**: Planned
