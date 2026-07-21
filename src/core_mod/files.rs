@@ -181,7 +181,7 @@ pub fn sanitize_filename(name: &str) -> String {
     }
 
     // Trim trailing spaces and dots (Windows)
-    let trimmed = result.trim_end_matches(|c: char| c == ' ' || c == '.');
+    let trimmed = result.trim_end_matches([' ', '.']);
     trimmed.to_string()
 }
 

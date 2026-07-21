@@ -86,10 +86,7 @@ pub fn find_duplicates(files: &[(String, String)]) -> HashMap<String, Vec<String
     let mut hash_map: HashMap<String, Vec<String>> = HashMap::new();
 
     for (path, hash) in files {
-        hash_map
-            .entry(hash.clone())
-            .or_insert_with(Vec::new)
-            .push(path.clone());
+        hash_map.entry(hash.clone()).or_default().push(path.clone());
     }
 
     // Filter to only groups with more than one file
