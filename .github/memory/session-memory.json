@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-07-21T15:59:00Z",
+  "lastUpdated": "2026-07-21T16:18:00Z",
   "entries": [
     {
       "id": "proj-001",
@@ -109,10 +109,19 @@
       "content": "リファクタリング計画：Phase 4a: ヘルパー関数をutils.rsに抽出 → Phase 4b: render関数をui/render.rsに移動 → Phase 4c: イベントハンドリングをevent.rsに分離 → Phase 4d: App構造体のメソッドをモジュールに分散。",
       "tags": ["refactoring", "plan", "module-separation"],
       "compressed": false
+    },
+    {
+      "id": "refactor-003",
+      "timestamp": "2026-07-21T16:18:00Z",
+      "category": "decision",
+      "priority": "high",
+      "content": "stub関数の統合完了。core_mod/files.rsからsafe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_sizeをインポートし、main.rs内の重複定義を削除。main.rsを38行削減。全35テスト成功。",
+      "tags": ["refactoring", "completed", "module-integration"],
+      "compressed": false
     }
   ],
   "metadata": {
-    "totalEntries": 12,
+    "totalEntries": 13,
     "compressedCount": 0,
     "sessionCount": 1
   }
