@@ -1893,9 +1893,9 @@ impl App {
                 let ext = path.extension().unwrap().to_string_lossy().to_string();
 
                 let new_name = if is_digit_underscore_digit(&file_stem) {
-                    Some(format!("{}{}", file_stem.replace("_", ""), ext))
+                    Some(format!("{}.{}", file_stem.replace("_", ""), ext))
                 } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-                    Some(format!("{}{}", cleaned, ext))
+                    Some(format!("{}.{}", cleaned, ext))
                 } else {
                     None
                 };
@@ -1926,7 +1926,7 @@ impl App {
                         let datetime: chrono::DateTime<chrono::Local> = modified.into();
                         let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
                         let ext = path.extension().unwrap().to_string_lossy().to_string();
-                        let new_name = format!("{}{}", timestamp, ext);
+                        let new_name = format!("{}.{}", timestamp, ext);
                         if new_name != file_name.as_ref() {
                             self.preview_items.push((file_name.to_string(), new_name));
                         }
@@ -3228,7 +3228,7 @@ fn run_full_process(
                 if let Ok(modified) = meta.modified() {
                     let datetime: chrono::DateTime<chrono::Local> = modified.into();
                     let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
-                    let new_name = format!("{}{}", timestamp, ext);
+                    let new_name = format!("{}.{}", timestamp, ext);
                     if let Ok(final_name) = get_unique_filename(&path, &new_name) {
                         let new_path = path.parent().unwrap().join(&final_name);
                         if !dry_run {
@@ -3321,9 +3321,9 @@ fn clean_filenames(dest: &str, dry_run: bool, add_error: &dyn Fn(String)) -> usi
         let ext = path.extension().unwrap().to_string_lossy().to_string();
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
-            format!("{}{}", file_stem.replace("_", ""), ext)
+            format!("{}.{}", file_stem.replace("_", ""), ext)
         } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-            format!("{}{}", cleaned, ext)
+            format!("{}.{}", cleaned, ext)
         } else {
             continue;
         };
@@ -3370,9 +3370,9 @@ fn run_with_progress(
         let new_name = match mode {
             "rename" => {
                 if is_digit_underscore_digit(&file_stem) {
-                    Some(format!("{}{}", file_stem.replace("_", ""), ext))
+                    Some(format!("{}.{}", file_stem.replace("_", ""), ext))
                 } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-                    Some(format!("{}{}", cleaned, ext))
+                    Some(format!("{}.{}", cleaned, ext))
                 } else {
                     None
                 }
@@ -3386,7 +3386,7 @@ fn run_with_progress(
                         if let Ok(modified) = meta.modified() {
                             let datetime: chrono::DateTime<chrono::Local> = modified.into();
                             let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
-                            Some(format!("{}{}", timestamp, ext))
+                            Some(format!("{}.{}", timestamp, ext))
                         } else { None }
                     } else { None }
                 }
@@ -7336,7 +7336,7 @@ fn rename_by_timestamp(dest: &str) -> Result<(), Box<dyn std::error::Error>> {
         let datetime: chrono::DateTime<chrono::Local> = modified.into();
         let timestamp = datetime.format("%Y%m%d%H%M%S").to_string();
 
-        let new_name = format!("{}{}", timestamp, ext);
+        let new_name = format!("{}.{}", timestamp, ext);
         let final_name = get_unique_filename(&path, &new_name)?;
 
         let new_path = path.parent().unwrap().join(&final_name);
@@ -7353,11 +7353,17 @@ fn get_unique_filename(path: &PathBuf, name: &str) -> Result<String, Box<dyn std
         return Ok(name.to_string());
     }
 
-    let base = name.trim_end_matches(|c: char| c.is_numeric() || c == '.');
-    let ext = path.extension().unwrap().to_string_lossy().to_string();
+    // Separate stem and extension from the name
+    let name_path = PathBuf::from(name);
+    let stem = name_path.file_stem().unwrap().to_string_lossy().to_string();
+    let ext = name_path.extension().unwrap_or_default().to_string_lossy().to_string();
 
     for i in 0..10 {
-        let candidate = format!("{}{}{}", base, i, ext);
+        let candidate = if ext.is_empty() {
+            format!("{}{}", stem, i)
+        } else {
+            format!("{}.{}{}", stem, i, ext)
+        };
         let candidate_path = path.parent().unwrap().join(&candidate);
         if !candidate_path.exists() {
             return Ok(candidate);
@@ -7379,9 +7385,9 @@ fn rename_remove_underscore_parens(dest: &str) -> Result<(), Box<dyn std::error:
         let ext = path.extension().unwrap().to_string_lossy().to_string();
 
         let new_name = if is_digit_underscore_digit(&file_stem) {
-            format!("{}{}", file_stem.replace("_", ""), ext)
+            format!("{}.{}", file_stem.replace("_", ""), ext)
         } else if let Some(cleaned) = remove_trailing_parentheses(&file_stem) {
-            format!("{}{}", cleaned, ext)
+            format!("{}.{}", cleaned, ext)
         } else {
             continue;
         };
