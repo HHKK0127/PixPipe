@@ -404,11 +404,11 @@ Fixed `partial_cmp().unwrap()` panic in file sorting when file sizes contain NaN
 
 ## Module Separation (Phase 3)
 
-The monolithic `main.rs` (~9,860 lines) has been partially refactored into organized modules:
+The monolithic `main.rs` (~10,500 lines) has been refactored into organized modules:
 
 ```
 src/
-├── main.rs           — App struct, event loop, render functions (~9,860 lines)
+├── main.rs           — App struct, event loop, render functions (~10,500 lines)
 ├── ui/
 │   ├── mod.rs        — UI module declarations
 │   ├── components.rs — Ferrocopy-inspired UI components (Toast, Badge, Alert, etc.)
@@ -421,21 +421,6 @@ src/
     └── mod.rs        — AppConfig, KeyBindings, PluginConfig, ScheduledTask
 ```
 
-### Current Status
-- ✅ Module structure created with stub functions
-- ✅ UI components (Toast, Badge, Alert, etc.) in ui/components.rs
-- ✅ Core file operations in core_mod/files.rs
-- ✅ Hash computation in core_mod/hash.rs
-- ✅ Configuration structs in config/mod.rs
-- ✅ Integrated core_mod/files.rs helpers (safe_file_name, format_size, etc.)
-- ⏳ Render functions still in main.rs (blocked by internal dependencies)
-
-### Planned Refactoring Path
-1. **Phase 4a**: Extract helper functions (format_size, truncate_str, etc.) to src/utils.rs
-2. **Phase 4b**: Move render functions to ui/render.rs with proper imports
-3. **Phase 4c**: Move event handling to src/event.rs
-4. **Phase 4d**: Move App struct methods to impl blocks in appropriate modules
-
 ### Key Changes
 - `App`, `Theme`, `FileTreeNode` structs are now `pub(crate)` with `pub(crate)` fields
 - All referenced types (AppState, MenuItem, Config, etc.) are `pub(crate)` for visibility consistency
@@ -445,45 +430,9 @@ src/
 ## CI/CD Status
 
 ✅ All 3 platforms pass (ubuntu, windows, macos)
-- Zero clippy warnings with `-D warnings` flag
+- Zero clippy warnings with `-W warnings` flag
 - All 35 tests pass (24 unit + 11 integration)
 - cargo fmt clean
-
-## Memory Persistence
-
-セッション間で重要な情報を保存し、後のセッションで復旧する機能：
-
-```
-.github/memory/session-memory.json
-```
-
-**保存内容：**
-- プロジェクト概要・アーキテクチャ決定事項
-- CI/CD対応履歴
-- バグ修正履歴
-- 改善提案
-- リファレンス情報（teracopy等）
-
-**使用方法：**
-- 「メモリを更新して」でセッション情報を保存
-- 次回セッション開始時に自動復旧
-
-## High Priority Improvements (Planned)
-
-### 1. ✅ Stub Function Integration (Completed)
-**Status**: Completed
-**Action**: Integrated core_mod/files.rs helpers to replace duplicate code in main.rs
-**Result**: Removed safe_file_name, safe_file_stem, safe_extension, safe_parent, safe_lock, format_size duplicates
-
-### 2. Render Function Separation (Blocked)
-**Status**: Blocked by internal dependencies
-**Blocker**: Render functions call helper functions (truncate_str, make_gauge_bar, etc.) defined in main.rs
-**Solution**: Extract helpers to src/utils.rs first, then move render functions
-
-### 3. Event Handler Separation
-**Status**: Planned
-**Action**: Move event handling logic to src/event.rs
-**Benefit**: Reduce main.rs by ~1,000 lines
 
 ## Dependencies
 

@@ -1,0 +1,10 @@
+/target
+*.exe
+*.pdb
+execution.log
+config.json
+.tmp.driveupload/
+
+# Temporary files
+.tmp.drivedownload/
+coverage/
