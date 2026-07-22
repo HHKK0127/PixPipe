@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastUpdated": "2026-07-21T16:18:00Z",
+  "lastUpdated": "2026-07-21T17:45:00Z",
   "entries": [
     {
       "id": "proj-001",
@@ -154,10 +154,28 @@
       "content": "Rustdoc comments added to main functions: main(), ui(), run_app(), all render_* functions, helper functions (truncate_str, make_gauge_bar, format_duration), and UI component functions.",
       "tags": ["documentation", "rustdoc", "quality"],
       "compressed": false
+    },
+    {
+      "id": "module-sep-003",
+      "timestamp": "2026/07/21 17:45:00",
+      "category": "decision",
+      "priority": "high",
+      "content": "Module separation Phase 3完了。event_handler.rs（EventHandler構造体、EventResult列挙型）とutils.rs（truncate_str, make_gauge_bar, format_duration, format_file_size, format_percentage）を作成。core_mod/files.rsに16個のユニットテスト追加、hash.rsとconfig/mod.rsにテスト追加。合計61テスト（50ユニット+11統合）成功。",
+      "tags": ["refactoring", "module-separation", "testing"],
+      "compressed": false
+    },
+    {
+      "id": "ci-004",
+      "timestamp": "2026/07/21 17:45:00",
+      "category": "decision",
+      "priority": "high",
+      "content": "CI ラン29816184592が全3プラットフォーム通過。ubuntu(1m6s)、macos(57s)、windows(2m32s)。イベントハンドラのplatform-dependentテスト（test_poll_event_no_timeout）を削除してCI安定化。",
+      "tags": ["ci", "testing", "stability"],
+      "compressed": false
     }
   ],
   "metadata": {
-    "totalEntries": 17,
+    "totalEntries": 19,
     "compressedCount": 0,
     "sessionCount": 1
   }
